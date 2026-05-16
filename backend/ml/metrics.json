@@ -1,0 +1,28 @@
+{
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1_score": 1.0,
+  "confusion_matrix": [
+    [
+      12,
+      0,
+      0
+    ],
+    [
+      0,
+      15,
+      0
+    ],
+    [
+      0,
+      0,
+      21
+    ]
+  ],
+  "classes": [
+    "negative",
+    "neutral",
+    "positive"
+  ]
+}
