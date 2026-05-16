@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+scikit-learn
+nltk
+spacy
+pandas
+pydantic
+vaderSentiment
+textblob
+

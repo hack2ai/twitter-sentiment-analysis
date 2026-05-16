@@ -1,0 +1,21 @@
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pkl
+backend/ml/sentiment_model.pkl
+backend/ml/vectorizer.pkl
+backend/ml/metrics.json
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
