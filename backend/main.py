@@ -213,6 +213,20 @@ def get_metrics():
         return json.load(file)
 
 
+@app.get("/wordcloud")
+def get_wordcloud():
+    default_words = [
+        {"text": "amazing", "value": 10},
+        {"text": "great", "value": 9},
+        {"text": "love", "value": 8},
+        {"text": "happy", "value": 7},
+        {"text": "good", "value": 6},
+        {"text": "terrible", "value": 6},
+        {"text": "worst", "value": 5},
+    ]
+    return default_words
+
+
 @app.post("/analyze/analytics")
 async def analyze_analytics(file: UploadFile = File(...)):
     batch = await analyze_batch(file)
