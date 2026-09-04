@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, BarChart3, CheckCircle2, Clock3, LogOut, MessageSquareText, MinusCircle, Search, ShieldCheck, Sparkles, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { BarChart3, CheckCircle2, Clock3, Download, LogOut, MessageSquareText, MinusCircle, Search, ShieldCheck, Sparkles, Trash2, TrendingDown, TrendingUp, UserRound } from "lucide-react";
 import { analyzeAndSaveText, deleteAnalysis, getAnalysisHistory, getCurrentUser, getDashboardStats, type AnalysisHistoryItem, type AuthUser, type DashboardStats, type SentimentResult } from "@/lib/api";
 import { clearSession, getToken } from "@/lib/auth";
 
@@ -12,6 +12,10 @@ function sentimentTone(sentiment: string) {
   if (sentiment === "positive") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (sentiment === "negative") return "border-rose-200 bg-rose-50 text-rose-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function csvEscape(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 export default function DashboardPage() {
@@ -71,6 +75,7 @@ export default function DashboardPage() {
 
   async function remove(id: number) {
     if (!token) return;
+    setError("");
     try {
       await deleteAnalysis(id, token);
       await loadData(token);
@@ -79,9 +84,35 @@ export default function DashboardPage() {
     }
   }
 
+  function exportHistory() {
+    if (history.length === 0) {
+      setError("There is no analysis history to export yet.");
+      return;
+    }
+    const header = ["id", "text", "sentiment", "confidence", "method", "created_at"];
+    const rows = history.map((item) => [
+      String(item.id),
+      item.text,
+      item.sentiment,
+      String(item.confidence),
+      item.method,
+      item.created_at,
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sentiment-analysis-history.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function logout() {
     clearSession();
-    router.push("/login");
+    router.replace("/login");
   }
 
   const filteredHistory = useMemo(() => {
@@ -116,9 +147,12 @@ export default function DashboardPage() {
               <span className="text-xs font-bold uppercase tracking-[0.22em]">Private workspace</span>
             </div>
             <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Welcome, {user?.name}</h1>
-            <p className="mt-2 text-sm text-slate-400">Your saved sentiment intelligence, analytics, and recent decisions.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400">
+              <span className="inline-flex items-center gap-1.5"><UserRound className="h-4 w-4" />{user?.email}</span>
+              <span>Saved sentiment intelligence and personal analytics.</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button onClick={() => router.push("/")} className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900">Open analyzer</button>
             <button onClick={logout} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-slate-200"><LogOut className="h-4 w-4" /> Logout</button>
           </div>
@@ -144,8 +178,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 sm:p-8">
-            <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">History</p><h2 className="mt-2 text-2xl font-black">Recent analyses</h2></div><Clock3 className="h-5 w-5 text-slate-500" /></div>
-            <div className="relative mt-5"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search text or sentiment" className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-cyan-400" /></div>
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">History</p><h2 className="mt-2 text-2xl font-black">Recent analyses</h2></div><Clock3 className="mt-1 h-5 w-5 text-slate-500" /></div>
+            <div className="mt-5 flex gap-2"><div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search text or sentiment" className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-cyan-400" /></div><button onClick={exportHistory} title="Export history as CSV" className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300"><Download className="h-4 w-4" /><span className="hidden sm:inline">Export</span></button></div>
             <div className="mt-5 max-h-[31rem] space-y-3 overflow-y-auto pr-1">
               {filteredHistory.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-500">No matching saved analyses.</div> : filteredHistory.map((item) => (
                 <article key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 transition hover:border-slate-700">
