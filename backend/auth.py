@@ -24,22 +24,29 @@ def hash_password(password: str) -> str:
     value = _password_bytes(password)
     if len(value) > 72:
         raise ValueError("Password cannot be longer than 72 UTF-8 bytes.")
-    return bcrypt.hashpw(value, bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(value, bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         value = _password_bytes(password)
-        if len(value) > 72:
+        if len(value) > 72 or not password_hash:
             return False
-        return bcrypt.checkpw(value, password_hash.encode("utf-8"))
-    except (ValueError, TypeError):
+        stored = password_hash.encode("utf-8")
+        if stored.startswith(b"$2y$"):
+            stored = b"$2b$" + stored[4:]
+        return bcrypt.checkpw(value, stored)
+    except (ValueError, TypeError, UnicodeError):
         return False
 
 
 def create_access_token(user_id: int) -> str:
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": str(user_id), "exp": expires_at}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expires_at},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
 
 
 def get_current_user(
@@ -61,7 +68,6 @@ def get_current_user(
         user_id = payload.get("sub")
         if not user_id:
             raise credentials_error
-
         user = db.get(User, int(user_id))
     except (JWTError, ValueError, TypeError) as exc:
         raise credentials_error from exc
