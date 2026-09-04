@@ -5,6 +5,10 @@ nltk
 spacy
 pandas
 pydantic
+pydantic[email]
 vaderSentiment
 textblob
-
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
