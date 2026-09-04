@@ -7,34 +7,51 @@ from collections import Counter
 from typing import AsyncGenerator, List
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.orm import Session
 
+from auth import create_access_token, get_current_user, hash_password, verify_password
+from database import Base, engine, get_db
 from ml.predict import predict_sentiment
+from models import Analysis, User
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "3.0.0"
 MAX_BATCH_ROWS = int(os.getenv("MAX_BATCH_ROWS", "1000"))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Social Sentiment Intelligence API",
     version=APP_VERSION,
-    description="Production-ready sentiment analysis API for single text, batch CSV, analytics, and live demo streaming.",
+    description="Sentiment intelligence API with machine learning, authentication, analytics, and persistent history.",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_ORIGIN],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
 class TextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
+
+
+class RegisterRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class SentimentResponse(BaseModel):
@@ -61,14 +78,21 @@ def _validate_and_analyze(text: str) -> dict:
     return {"original_text": cleaned, **result}
 
 
+def _analysis_to_dict(analysis: Analysis) -> dict:
+    return {
+        "id": analysis.id,
+        "text": analysis.text,
+        "cleaned_text": analysis.cleaned_text,
+        "sentiment": analysis.sentiment,
+        "confidence": analysis.confidence,
+        "method": analysis.method,
+        "created_at": analysis.created_at.isoformat(),
+    }
+
+
 @app.get("/")
 def read_root():
-    return {
-        "name": "Social Sentiment Intelligence API",
-        "version": APP_VERSION,
-        "status": "ok",
-        "docs": "/docs",
-    }
+    return {"name": "Social Sentiment Intelligence API", "version": APP_VERSION, "status": "ok", "docs": "/docs"}
 
 
 @app.get("/health")
@@ -76,9 +100,69 @@ def health_check():
     return {"status": "healthy", "version": APP_VERSION}
 
 
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    email = str(request.email).lower()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+    user = User(name=request.name.strip(), email=email, password_hash=hash_password(request.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"user": {"id": user.id, "name": user.name, "email": user.email}, "access_token": create_access_token(user.id), "token_type": "bearer"}
+
+
+@app.post("/auth/login")
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == str(request.email).lower()).first()
+    if not user or not verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    return {"user": {"id": user.id, "name": user.name, "email": user.email}, "access_token": create_access_token(user.id), "token_type": "bearer"}
+
+
+@app.get("/auth/me")
+def me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "name": current_user.name, "email": current_user.email, "created_at": current_user.created_at.isoformat()}
+
+
 @app.post("/analyze/text", response_model=SentimentResponse)
 def analyze_text(request: TextRequest):
     return SentimentResponse(**_validate_and_analyze(request.text))
+
+
+@app.post("/analyses/text", response_model=SentimentResponse)
+def analyze_and_save_text(request: TextRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    result = _validate_and_analyze(request.text)
+    analysis = Analysis(user_id=current_user.id, text=result["original_text"], cleaned_text=result["cleaned_text"], sentiment=result["sentiment"], confidence=result["confidence"], method=result["method"])
+    db.add(analysis)
+    db.commit()
+    return SentimentResponse(**result)
+
+
+@app.get("/analyses/history")
+def analysis_history(limit: int = 50, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    limit = max(1, min(limit, 100))
+    analyses = db.query(Analysis).filter(Analysis.user_id == current_user.id).order_by(Analysis.created_at.desc()).limit(limit).all()
+    return {"items": [_analysis_to_dict(item) for item in analyses], "count": len(analyses)}
+
+
+@app.get("/analyses/dashboard")
+def analysis_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    analyses = db.query(Analysis).filter(Analysis.user_id == current_user.id).all()
+    counts = Counter(item.sentiment for item in analyses)
+    total = len(analyses)
+    average_confidence = round(sum(item.confidence for item in analyses) / total, 4) if total else 0
+    return {"total_analyses": total, "positive": counts["positive"], "negative": counts["negative"], "neutral": counts["neutral"], "average_confidence": average_confidence}
+
+
+@app.delete("/analyses/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_analysis(analysis_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    analysis = db.query(Analysis).filter(Analysis.id == analysis_id, Analysis.user_id == current_user.id).first()
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    db.delete(analysis)
+    db.commit()
 
 
 @app.post("/analyze/batch", response_model=BatchSentimentResponse)
@@ -86,38 +170,23 @@ async def analyze_batch(file: UploadFile = File(...)):
     filename = file.filename or ""
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
-
     try:
         contents = await file.read()
         if not contents:
             raise HTTPException(status_code=400, detail="Uploaded CSV is empty.")
-
         df = pd.read_csv(io.BytesIO(contents))
         if df.empty:
             raise HTTPException(status_code=400, detail="Uploaded CSV contains no rows.")
         if len(df) > MAX_BATCH_ROWS:
-            raise HTTPException(
-                status_code=413,
-                detail=f"CSV contains {len(df)} rows. Maximum supported rows per upload: {MAX_BATCH_ROWS}.",
-            )
-
+            raise HTTPException(status_code=413, detail=f"CSV contains {len(df)} rows. Maximum supported rows: {MAX_BATCH_ROWS}.")
         lower_to_original = {str(column).strip().lower(): column for column in df.columns}
-        text_column = None
-        for candidate in ("text", "tweet", "content", "message"):
-            if candidate in lower_to_original:
-                text_column = lower_to_original[candidate]
-                break
-
+        text_column = next((lower_to_original[c] for c in ("text", "tweet", "content", "message") if c in lower_to_original), None)
         if text_column is None:
             string_columns = df.select_dtypes(include=["object", "string"]).columns.tolist()
             if not string_columns:
                 raise HTTPException(status_code=400, detail="Could not find a text column in the CSV.")
             text_column = string_columns[0]
-
-        results: list[dict] = []
-        counts = Counter({"positive": 0, "negative": 0, "neutral": 0})
-        skipped = 0
-
+        results, counts, skipped = [], Counter({"positive": 0, "negative": 0, "neutral": 0}), 0
         for value in df[text_column].tolist():
             text = "" if pd.isna(value) else str(value).strip()
             if not text:
@@ -126,38 +195,11 @@ async def analyze_batch(file: UploadFile = File(...)):
             result = _validate_and_analyze(text)
             counts[result["sentiment"]] += 1
             results.append(result)
-
-        total_analyzed = len(results)
-        summary = {
-            "positive": counts["positive"],
-            "negative": counts["negative"],
-            "neutral": counts["neutral"],
-            "total": total_analyzed,
-        }
-        percentages = {
-            "positive": round((counts["positive"] / total_analyzed) * 100, 2) if total_analyzed else 0,
-            "negative": round((counts["negative"] / total_analyzed) * 100, 2) if total_analyzed else 0,
-            "neutral": round((counts["neutral"] / total_analyzed) * 100, 2) if total_analyzed else 0,
-        }
-
-        return BatchSentimentResponse(
-            results=results,
-            summary=summary,
-            metadata={
-                "file_name": filename,
-                "text_column": str(text_column),
-                "rows_received": len(df),
-                "rows_analyzed": total_analyzed,
-                "rows_skipped": skipped,
-                "percentages": percentages,
-            },
-        )
+        total = len(results)
+        summary = {"positive": counts["positive"], "negative": counts["negative"], "neutral": counts["neutral"], "total": total}
+        return BatchSentimentResponse(results=results, summary=summary, metadata={"file_name": filename, "text_column": str(text_column), "rows_received": len(df), "rows_analyzed": total, "rows_skipped": skipped, "percentages": {key: round((value / total) * 100, 2) if total else 0 for key, value in counts.items()}})
     except HTTPException:
         raise
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded.") from exc
-    except pd.errors.ParserError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid CSV format: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Unexpected error while processing the CSV.") from exc
 
@@ -174,48 +216,23 @@ def get_metrics():
 @app.post("/analyze/analytics")
 async def analyze_analytics(file: UploadFile = File(...)):
     batch = await analyze_batch(file)
-    positive = batch.summary["positive"]
-    negative = batch.summary["negative"]
-    neutral = batch.summary["neutral"]
     total = batch.summary["total"]
-    score = round(((positive - negative) / total) * 100, 2) if total else 0
-
+    score = round(((batch.summary["positive"] - batch.summary["negative"]) / total) * 100, 2) if total else 0
     words = Counter()
     for item in batch.results:
         words.update(item["cleaned_text"].split())
-
-    return {
-        "summary": batch.summary,
-        "metadata": batch.metadata,
-        "sentiment_index": score,
-        "top_terms": [{"text": word, "value": count} for word, count in words.most_common(30)],
-    }
+    return {"summary": batch.summary, "metadata": batch.metadata, "sentiment_index": score, "top_terms": [{"text": word, "value": count} for word, count in words.most_common(30)]}
 
 
 async def simulate_stream() -> AsyncGenerator[str, None]:
     import asyncio
     import random
-
-    sample_posts = [
-        "Just tried the new feature and it is amazing!",
-        "I am disappointed with the latest update.",
-        "The experience is okay, nothing special.",
-        "Absolutely love this product!",
-        "This is frustrating and needs improvement.",
-        "The interface looks clean and easy to use.",
-    ]
-
+    sample_posts = ["Just tried the new feature and it is amazing!", "I am disappointed with the latest update.", "The experience is okay, nothing special.", "Absolutely love this product!", "This is frustrating and needs improvement.", "The interface looks clean and easy to use."]
     for _ in range(20):
         await asyncio.sleep(random.uniform(0.8, 2.0))
-        text = random.choice(sample_posts)
-        result = _validate_and_analyze(text)
-        yield f"data: {json.dumps(result)}\n\n"
+        yield f"data: {json.dumps(_validate_and_analyze(random.choice(sample_posts)))}\n\n"
 
 
 @app.get("/analyze/stream")
 async def analyze_stream():
-    return StreamingResponse(
-        simulate_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+    return StreamingResponse(simulate_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
