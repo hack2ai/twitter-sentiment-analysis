@@ -9,6 +9,10 @@ pydantic[email]
 vaderSentiment
 textblob
 sqlalchemy
+alembic
+psycopg[binary]
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
+pytest
+httpx
