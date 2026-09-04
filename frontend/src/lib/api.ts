@@ -15,6 +15,11 @@ export interface BatchSentimentResult {
   metadata: { file_name: string; text_column: string; rows_received: number; rows_analyzed: number; rows_skipped: number; percentages: Record<string, number> };
 }
 
+export interface WordCloudItem {
+  text: string;
+  value: number;
+}
+
 export interface AuthUser { id: number; name: string; email: string; created_at?: string }
 export interface AuthResponse { user: AuthUser; access_token: string; token_type: string }
 export interface AnalysisHistoryItem extends SentimentResult { id: number; text: string; created_at: string }
@@ -81,10 +86,17 @@ export async function analyzeBatch(file: File): Promise<BatchSentimentResult> {
   return response.json();
 }
 
-export async function fetchMetrics() {
+export async function fetchMetrics(): Promise<Record<string, unknown>> {
   const response = await fetch(`${API_URL}/metrics`, { cache: "no-store" });
   if (!response.ok) throw new Error(await getError(response));
   return response.json();
+}
+
+export async function fetchWordCloud(): Promise<WordCloudItem[]> {
+  const response = await fetch(`${API_URL}/wordcloud`, { cache: "no-store" });
+  if (!response.ok) throw new Error(await getError(response));
+  const payload = await response.json();
+  return Array.isArray(payload) ? payload : payload.words ?? [];
 }
 
 export function getStreamUrl() { return `${API_URL}/analyze/stream`; }
