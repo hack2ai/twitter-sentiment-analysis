@@ -6,6 +6,7 @@ export interface SentimentResult {
   method: string;
   cleaned_text: string;
   original_text?: string;
+  text?: string;
 }
 
 export interface BatchSentimentResult {
