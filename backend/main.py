@@ -18,10 +18,13 @@ from auth import create_access_token, get_current_user, hash_password, verify_pa
 from database import Base, engine, get_db
 from ml.predict import predict_sentiment
 from models import Analysis, User
+from rate_limit import AuthRateLimitMiddleware
 
 APP_VERSION = "3.0.0"
 MAX_BATCH_ROWS = int(os.getenv("MAX_BATCH_ROWS", "1000"))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "5"))
+AUTH_RATE_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_WINDOW_SECONDS", "60"))
 
 Base.metadata.create_all(bind=engine)
 
@@ -29,6 +32,12 @@ app = FastAPI(
     title="Social Sentiment Intelligence API",
     version=APP_VERSION,
     description="Sentiment intelligence API with machine learning, authentication, analytics, and persistent history.",
+)
+
+app.add_middleware(
+    AuthRateLimitMiddleware,
+    limit=max(1, AUTH_RATE_LIMIT),
+    window_seconds=max(1, AUTH_RATE_WINDOW_SECONDS),
 )
 
 app.add_middleware(
