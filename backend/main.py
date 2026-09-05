@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import text
+from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
@@ -227,15 +227,23 @@ def analysis_history(
 
 @app.get("/analyses/dashboard")
 def analysis_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    analyses = db.query(Analysis).filter(Analysis.user_id == current_user.id).all()
-    counts = Counter(item.sentiment for item in analyses)
-    total = len(analyses)
+    totals = (
+        db.query(
+            func.count(Analysis.id).label("total"),
+            func.coalesce(func.sum(case((Analysis.sentiment == "positive", 1), else_=0)), 0).label("positive"),
+            func.coalesce(func.sum(case((Analysis.sentiment == "negative", 1), else_=0)), 0).label("negative"),
+            func.coalesce(func.sum(case((Analysis.sentiment == "neutral", 1), else_=0)), 0).label("neutral"),
+            func.coalesce(func.avg(Analysis.confidence), 0).label("average_confidence"),
+        )
+        .filter(Analysis.user_id == current_user.id)
+        .one()
+    )
     return {
-        "total_analyses": total,
-        "positive": counts["positive"],
-        "negative": counts["negative"],
-        "neutral": counts["neutral"],
-        "average_confidence": round(sum(item.confidence for item in analyses) / total, 4) if total else 0,
+        "total_analyses": int(totals.total or 0),
+        "positive": int(totals.positive or 0),
+        "negative": int(totals.negative or 0),
+        "neutral": int(totals.neutral or 0),
+        "average_confidence": round(float(totals.average_confidence or 0), 4),
     }
 
 
