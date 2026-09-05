@@ -154,4 +154,4 @@ def test_auth_rate_limit_returns_429() -> None:
     blocked = limited_client.post("/auth/login")
     assert blocked.status_code == 429
     assert blocked.headers.get("retry-after")
-    assert "rate limit" in blocked.json()["detail"].lower()
+    assert blocked.json()["detail"] == "Too many authentication attempts. Please try again later."
