@@ -5,7 +5,7 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 ## Highlights
 
 - **Single-text sentiment analysis** with sentiment, confidence, cleaned text, and model information.
-- **Batch CSV analysis** with automatic text-column detection and configurable row limits.
+- **Batch CSV analysis** with automatic text-column detection and configurable row and file-size limits.
 - **Interactive analytics** with sentiment distribution, confidence distribution, model metrics, and confusion matrix.
 - **Trending sentiment keywords** through a backend-powered word cloud.
 - **Real-time sentiment stream** using Server-Sent Events (SSE).
@@ -83,7 +83,7 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 - bcrypt password hashing
 - Configurable CORS
 - Pydantic request validation
-- Batch-size limits
+- Batch row and file-size limits
 - Authentication rate limiting
 - Production secret validation
 - Non-root backend container
@@ -169,7 +169,7 @@ docker compose down
 
 The backend container applies Alembic migrations before starting FastAPI. Compose persists the SQLite-compatible backend data under the `sentiment_data` volume mounted at `/app/data`.
 
-The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, `AUTH_RATE_LIMIT`, `AUTH_RATE_WINDOW_SECONDS`, and the frontend `NEXT_PUBLIC_API_URL` build argument.
+The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, `MAX_BATCH_FILE_BYTES`, `AUTH_RATE_LIMIT`, `AUTH_RATE_WINDOW_SECONDS`, and the frontend `NEXT_PUBLIC_API_URL` build argument. The default batch file-size limit is `10485760` bytes (10 MiB).
 
 ## Run Locally Without Docker
 
@@ -266,7 +266,7 @@ content
 message
 ```
 
-If none of those columns exists, the backend falls back to the first string/object column. Empty rows are skipped, and the default maximum is `1000` rows per request.
+If none of those columns exists, the backend falls back to the first string/object column. Empty rows are skipped, and the default maximum is `1000` rows and `10 MiB` per request. The limits are configurable with `MAX_BATCH_ROWS` and `MAX_BATCH_FILE_BYTES`.
 
 Example:
 
