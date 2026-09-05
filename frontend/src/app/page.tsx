@@ -33,7 +33,6 @@ import {
   type WordCloudItem,
   type AuthUser,
 } from "@/lib/api";
-import { ConfidenceChart, SentimentPieChart } from "@/components/SentimentChart";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
 import { getSessionUser, getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
