@@ -11,8 +11,10 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 - **Real-time sentiment stream** using Server-Sent Events (SSE).
 - **Authentication** with registration, login, JWT-based protected routes, and per-user analysis history.
 - **Persistent history** with dashboard totals, average confidence, search/export UI, and analysis deletion.
-- **Docker Compose** setup for running the frontend and backend together.
-- **Environment-based configuration** for API origin, CORS, JWT settings, and batch limits.
+- **Request protection** with configurable authentication rate limiting.
+- **Database migrations** managed through Alembic with an initial schema revision.
+- **Docker Compose** setup for running the frontend and backend together with persistent backend data storage.
+- **Environment-based configuration** for API origin, CORS, JWT settings, rate limits, database URL, and batch limits.
 
 ## Architecture
 
@@ -39,6 +41,9 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
                                   v
                          SQLAlchemy database
                          User analysis history
+                                  |
+                                  v
+                         Alembic migrations
 ```
 
 ## Tech Stack
@@ -60,6 +65,7 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 - Pandas
 - Pydantic
 - SQLAlchemy
+- Alembic
 - SQLite-compatible database configuration
 
 ### Machine Learning & NLP
@@ -76,15 +82,18 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 - JWT bearer authentication
 - bcrypt password hashing
 - Configurable CORS
-- Input validation with Pydantic
+- Pydantic request validation
 - Batch-size limits
+- Authentication rate limiting
 - Production secret validation
+- Non-root backend container
 
 ### DevOps
 
 - Docker
 - Docker Compose
 - GitHub Actions CI
+- Dependabot dependency updates
 - Render deployment blueprint
 - Environment variables for runtime and build-time configuration
 
@@ -96,10 +105,18 @@ twitter-sentiment-analysis/
 │   ├── ml/
 │   ├── tests/
 │   ├── dataset/
+│   ├── migrations/
+│   │   ├── versions/
+│   │   │   └── 20260905_0001_initial_schema.py
+│   │   ├── env.py
+│   │   └── README
+│   ├── data/
+│   │   └── .gitkeep
 │   ├── auth.py
 │   ├── database.py
 │   ├── main.py
 │   ├── models.py
+│   ├── rate_limit.py
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -110,8 +127,9 @@ twitter-sentiment-analysis/
 │   ├── package.json
 │   └── .env.example
 ├── .github/
-│   └── workflows/
-│       └── ci.yml
+│   ├── workflows/
+│   │   └── ci.yml
+│   └── dependabot.yml
 ├── docker-compose.yml
 ├── render.yaml
 └── README.md
@@ -149,7 +167,9 @@ Stop the stack:
 docker compose down
 ```
 
-The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, and the frontend `NEXT_PUBLIC_API_URL` build argument.
+The backend container applies Alembic migrations before starting FastAPI. Compose persists the SQLite-compatible backend data under the `sentiment_data` volume mounted at `/app/data`.
+
+The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, `AUTH_RATE_LIMIT`, `AUTH_RATE_WINDOW_SECONDS`, and the frontend `NEXT_PUBLIC_API_URL` build argument.
 
 ## Run Locally Without Docker
 
@@ -167,10 +187,21 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-Create the environment file from the example and start the API:
+Create the environment file from the example:
 
 ```bash
 copy .env.example .env
+```
+
+Initialize the database schema with Alembic:
+
+```bash
+alembic upgrade head
+```
+
+Then start the API:
+
+```bash
 uvicorn main:app --reload --port 8000
 ```
 
@@ -184,6 +215,25 @@ npm run dev
 ```
 
 The frontend runs on port `3000` by default.
+
+## Database Migrations
+
+Alembic is the schema migration mechanism used by the project.
+
+From `backend/`:
+
+```bash
+alembic upgrade head
+```
+
+For future schema changes:
+
+```bash
+alembic revision --autogenerate -m "describe schema change"
+alembic upgrade head
+```
+
+Review generated migrations before applying them to a production database.
 
 ## API Endpoints
 
@@ -256,7 +306,7 @@ User-specific history
 Dashboard statistics / search / export / delete
 ```
 
-Passwords are hashed with bcrypt before storage, and protected routes require a bearer JWT.
+Passwords are hashed with bcrypt before storage, protected routes require a bearer JWT, and authentication endpoints are rate-limited through configurable environment variables.
 
 ## CI / Quality Checks
 
@@ -267,6 +317,7 @@ GitHub Actions validates both application layers on pushes and pull requests.
 ```bash
 python -m compileall -q .
 python -c "from main import app; assert app.title"
+alembic upgrade head
 pytest -q
 ```
 
@@ -277,6 +328,8 @@ npm ci
 npm run lint
 npm run build
 ```
+
+Dependabot is configured to check Python and npm dependency updates weekly.
 
 ## Deployment
 
@@ -289,8 +342,9 @@ Before production deployment:
 3. Set the frontend `NEXT_PUBLIC_API_URL` to the public backend URL.
 4. Set backend `FRONTEND_ORIGIN` to the public frontend URL.
 5. Verify `/health`, authentication, analysis, batch processing, and SSE streaming after deployment.
+6. Confirm the database is backed by persistent production storage rather than ephemeral local storage.
 
-The Render blueprint is prepared in the repository, but the Render account used during project setup currently requires billing information before a new web service can be created.
+The Render blueprint is prepared in the repository, but deployment still requires completing the hosting-provider account setup.
 
 ## Notes for Development
 
