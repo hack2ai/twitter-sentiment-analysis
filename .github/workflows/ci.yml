@@ -37,6 +37,11 @@ jobs:
           ENVIRONMENT: test
         run: python -c "from main import app; assert app.title"
 
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: sqlite:///data/sentiment.db
+        run: alembic upgrade head
+
       - name: Run API tests
         env:
           SECRET_KEY: ci-test-secret-key
@@ -44,6 +49,8 @@ jobs:
           ACCESS_TOKEN_EXPIRE_MINUTES: "60"
           AUTH_RATE_LIMIT: "100"
           AUTH_RATE_WINDOW_SECONDS: "60"
+          PYTHONPATH: .
+          DATABASE_URL: sqlite:///data/sentiment.db
         run: pytest -q
 
   frontend:
