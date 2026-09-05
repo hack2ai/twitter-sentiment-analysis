@@ -36,6 +36,15 @@ def test_health() -> None:
     assert payload["database"] == "ready"
 
 
+def test_security_response_headers() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+
+
 def test_register_login_and_me() -> None:
     email, password, token = register_user()
 
