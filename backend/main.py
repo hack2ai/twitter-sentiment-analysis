@@ -23,6 +23,7 @@ from rate_limit import AuthRateLimitMiddleware
 APP_VERSION = "3.0.0"
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
 MAX_BATCH_ROWS = int(os.getenv("MAX_BATCH_ROWS", "1000"))
+MAX_BATCH_FILE_BYTES = int(os.getenv("MAX_BATCH_FILE_BYTES", str(10 * 1024 * 1024)))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "5"))
 AUTH_RATE_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_WINDOW_SECONDS", "60"))
@@ -94,6 +95,24 @@ def _validate_and_analyze(text_value: str) -> dict:
     if len(cleaned) > 5000:
         raise HTTPException(status_code=400, detail="Text exceeds the 5000-character limit.")
     return {"original_text": cleaned, **predict_sentiment(cleaned)}
+
+
+async def _read_upload_with_limit(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_BATCH_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV file is too large. Maximum supported size: {MAX_BATCH_FILE_BYTES} bytes.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _analysis_to_dict(analysis: Analysis) -> dict:
@@ -236,7 +255,7 @@ async def analyze_batch(file: UploadFile = File(...)):
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
     try:
-        contents = await file.read()
+        contents = await _read_upload_with_limit(file)
         if not contents:
             raise HTTPException(status_code=400, detail="Uploaded CSV is empty.")
         df = pd.read_csv(io.BytesIO(contents))
@@ -317,45 +336,3 @@ def get_wordcloud():
         {"text": "terrible", "value": 6},
         {"text": "worst", "value": 5},
     ]
-
-
-@app.post("/analyze/analytics")
-async def analyze_analytics(file: UploadFile = File(...)):
-    batch = await analyze_batch(file)
-    total = batch.summary["total"]
-    score = round(((batch.summary["positive"] - batch.summary["negative"]) / total) * 100, 2) if total else 0
-    words = Counter()
-    for item in batch.results:
-        words.update(item["cleaned_text"].split())
-    return {
-        "summary": batch.summary,
-        "metadata": batch.metadata,
-        "sentiment_index": score,
-        "top_terms": [{"text": word, "value": count} for word, count in words.most_common(30)],
-    }
-
-
-async def simulate_stream() -> AsyncGenerator[str, None]:
-    import asyncio
-    import random
-
-    samples = [
-        "Just tried the new feature and it is amazing!",
-        "I am disappointed with the latest update.",
-        "The experience is okay, nothing special.",
-        "Absolutely love this product!",
-        "This is frustrating and needs improvement.",
-        "The interface looks clean and easy to use.",
-    ]
-    for _ in range(20):
-        await asyncio.sleep(random.uniform(0.8, 2.0))
-        yield f"data: {json.dumps(_validate_and_analyze(random.choice(samples)))}\n\n"
-
-
-@app.get("/analyze/stream")
-async def analyze_stream():
-    return StreamingResponse(
-        simulate_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
