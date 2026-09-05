@@ -32,6 +32,7 @@ import {
   type SentimentResult,
   type WordCloudItem,
   type AuthUser,
+  type Metrics,
 } from "@/lib/api";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
 import { getSessionUser, getToken } from "@/lib/auth";
@@ -65,7 +66,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [singleResult, setSingleResult] = useState<SentimentResult | null>(null);
   const [batchResult, setBatchResult] = useState<BatchSentimentResult | null>(null);
-  const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [words, setWords] = useState<WordCloudItem[]>([]);
   const [streamData, setStreamData] = useState<SentimentResult[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
