@@ -6,7 +6,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DATABASE_URL = f"sqlite:///{BASE_DIR / 'sentiment.db'}"
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'sentiment.db'}"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 url = make_url(DATABASE_URL)
