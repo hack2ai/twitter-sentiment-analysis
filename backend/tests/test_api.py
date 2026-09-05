@@ -9,6 +9,7 @@ os.environ.setdefault("ENVIRONMENT", "test")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import main as main_module
 from main import app
 from rate_limit import AuthRateLimitMiddleware
 
@@ -43,6 +44,16 @@ def test_security_response_headers() -> None:
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+def test_batch_upload_size_limit(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "MAX_BATCH_FILE_BYTES", 8)
+    response = client.post(
+        "/analyze/batch",
+        files={"file": ("oversized.csv", b"123456789", "text/csv")},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "CSV file is too large. Maximum supported size: 8 bytes."
 
 
 def test_register_login_and_me() -> None:
