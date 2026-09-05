@@ -32,12 +32,18 @@ jobs:
         run: python -m compileall -q .
 
       - name: Validate FastAPI application
+        env:
+          SECRET_KEY: ci-test-secret-key
+          ENVIRONMENT: test
         run: python -c "from main import app; assert app.title"
 
       - name: Run API tests
         env:
           SECRET_KEY: ci-test-secret-key
+          ENVIRONMENT: test
           ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+          AUTH_RATE_LIMIT: "100"
+          AUTH_RATE_WINDOW_SECONDS: "60"
         run: pytest -q
 
   frontend:
