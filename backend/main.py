@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
@@ -96,8 +97,12 @@ def read_root():
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "version": APP_VERSION}
+def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "version": APP_VERSION, "database": "ready"}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Database is not ready.") from exc
 
 
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
@@ -188,11 +193,11 @@ async def analyze_batch(file: UploadFile = File(...)):
             text_column = string_columns[0]
         results, counts, skipped = [], Counter({"positive": 0, "negative": 0, "neutral": 0}), 0
         for value in df[text_column].tolist():
-            text = "" if pd.isna(value) else str(value).strip()
-            if not text:
+            text_value = "" if pd.isna(value) else str(value).strip()
+            if not text_value:
                 skipped += 1
                 continue
-            result = _validate_and_analyze(text)
+            result = _validate_and_analyze(text_value)
             counts[result["sentiment"]] += 1
             results.append(result)
         total = len(results)
