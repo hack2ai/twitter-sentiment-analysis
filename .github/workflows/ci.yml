@@ -34,6 +34,12 @@ jobs:
       - name: Validate FastAPI application
         run: python -c "from main import app; assert app.title"
 
+      - name: Run API tests
+        env:
+          SECRET_KEY: ci-test-secret-key
+          ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+        run: pytest -q
+
   frontend:
     name: Frontend validation
     runs-on: ubuntu-latest
