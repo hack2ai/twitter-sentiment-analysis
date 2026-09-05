@@ -78,12 +78,15 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 - Configurable CORS
 - Input validation with Pydantic
 - Batch-size limits
+- Production secret validation
 
 ### DevOps
 
 - Docker
 - Docker Compose
-- Environment variables for runtime configuration
+- GitHub Actions CI
+- Render deployment blueprint
+- Environment variables for runtime and build-time configuration
 
 ## Project Structure
 
@@ -91,6 +94,7 @@ A full-stack NLP application for analyzing social-media text and visualizing sen
 twitter-sentiment-analysis/
 ├── backend/
 │   ├── ml/
+│   ├── tests/
 │   ├── dataset/
 │   ├── auth.py
 │   ├── database.py
@@ -105,7 +109,11 @@ twitter-sentiment-analysis/
 │   │   └── lib/
 │   ├── package.json
 │   └── .env.example
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── docker-compose.yml
+├── render.yaml
 └── README.md
 ```
 
@@ -141,7 +149,7 @@ Stop the stack:
 docker compose down
 ```
 
-The Compose configuration exposes the frontend on port `3000`, the backend on port `8000`, persists backend data through the `sentiment_data` volume, and supports `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, and `MAX_BATCH_ROWS` environment variables. fileciteturn136file0L2-L2
+The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, and the frontend `NEXT_PUBLIC_API_URL` build argument.
 
 ## Run Locally Without Docker
 
@@ -197,8 +205,6 @@ The frontend runs on port `3000` by default.
 | GET | `/wordcloud` | Return trending keyword data |
 | GET | `/analyze/stream` | Stream simulated sentiment results through SSE |
 
-The current FastAPI application exposes these authentication, analysis, history, analytics, metrics, word-cloud, and streaming routes directly from `backend/main.py`. fileciteturn138file0L2-L2
-
 ## CSV Batch Format
 
 The batch endpoint automatically looks for one of these columns, case-insensitively:
@@ -252,9 +258,43 @@ Dashboard statistics / search / export / delete
 
 Passwords are hashed with bcrypt before storage, and protected routes require a bearer JWT.
 
+## CI / Quality Checks
+
+GitHub Actions validates both application layers on pushes and pull requests.
+
+### Backend
+
+```bash
+python -m compileall -q .
+python -c "from main import app; assert app.title"
+pytest -q
+```
+
+### Frontend
+
+```bash
+npm ci
+npm run lint
+npm run build
+```
+
+## Deployment
+
+The repository includes `render.yaml` for a two-service Render deployment: one Docker web service for the FastAPI backend and one Docker web service for the Next.js frontend.
+
+Before production deployment:
+
+1. Set `ENVIRONMENT=production`.
+2. Use a strong unique `SECRET_KEY`.
+3. Set the frontend `NEXT_PUBLIC_API_URL` to the public backend URL.
+4. Set backend `FRONTEND_ORIGIN` to the public frontend URL.
+5. Verify `/health`, authentication, analysis, batch processing, and SSE streaming after deployment.
+
+The Render blueprint is prepared in the repository, but the Render account used during project setup currently requires billing information before a new web service can be created.
+
 ## Notes for Development
 
-The project is designed to run as a local portfolio/demo application. The included stream is a simulated SSE feed rather than a live X/Twitter API integration. The included model and metrics are also demonstration-oriented; production deployment should use a properly curated dataset, reproducible training, model versioning, and a production secret-management strategy.
+The project is designed as a local portfolio/demo application. The included stream is a simulated SSE feed rather than a live X/Twitter API integration. The included model and metrics are also demonstration-oriented; production deployment should use a properly curated dataset, reproducible training, model versioning, persistent production storage, and a production secret-management strategy.
 
 ## Author
 
