@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-development-secret")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+CONFIGURED_SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+DEVELOPMENT_SECRET_KEY = "change-this-development-secret"
+
+if ENVIRONMENT == "production" and (
+    not CONFIGURED_SECRET_KEY or CONFIGURED_SECRET_KEY == DEVELOPMENT_SECRET_KEY
+):
+    raise RuntimeError("SECRET_KEY must be set to a strong unique value when ENVIRONMENT=production.")
+
+SECRET_KEY = CONFIGURED_SECRET_KEY or DEVELOPMENT_SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 security = HTTPBearer()
