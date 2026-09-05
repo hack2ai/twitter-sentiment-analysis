@@ -20,6 +20,15 @@ export interface WordCloudItem {
   value: number;
 }
 
+export interface Metrics {
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1_score: number;
+  confusion_matrix: number[][];
+  classes: string[];
+}
+
 export interface AuthUser { id: number; name: string; email: string; created_at?: string }
 export interface AuthResponse { user: AuthUser; access_token: string; token_type: string }
 export interface AnalysisHistoryItem extends SentimentResult { id: number; text: string; created_at: string }
@@ -86,7 +95,7 @@ export async function analyzeBatch(file: File): Promise<BatchSentimentResult> {
   return response.json();
 }
 
-export async function fetchMetrics(): Promise<Record<string, unknown>> {
+export async function fetchMetrics(): Promise<Metrics> {
   const response = await fetch(`${API_URL}/metrics`, { cache: "no-store" });
   if (!response.ok) throw new Error(await getError(response));
   return response.json();
