@@ -1,8 +1,16 @@
+import os
 import uuid
 
+os.environ.setdefault("AUTH_RATE_LIMIT", "100")
+os.environ.setdefault("AUTH_RATE_WINDOW_SECONDS", "60")
+os.environ.setdefault("SECRET_KEY", "ci-test-secret-key")
+os.environ.setdefault("ENVIRONMENT", "test")
+
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from main import app
+from rate_limit import AuthRateLimitMiddleware
 
 client = TestClient(app)
 
@@ -129,3 +137,21 @@ def test_analyze_text() -> None:
     assert payload["sentiment"] in {"positive", "negative", "neutral"}
     assert 0 <= payload["confidence"] <= 1
     assert payload["cleaned_text"]
+
+
+def test_auth_rate_limit_returns_429() -> None:
+    limited_app = FastAPI()
+    limited_app.add_middleware(AuthRateLimitMiddleware, limit=2, window_seconds=60)
+
+    @limited_app.post("/auth/login")
+    def fake_login() -> dict[str, str]:
+        return {"status": "ok"}
+
+    limited_client = TestClient(limited_app)
+    assert limited_client.post("/auth/login").status_code == 200
+    assert limited_client.post("/auth/login").status_code == 200
+
+    blocked = limited_client.post("/auth/login")
+    assert blocked.status_code == 429
+    assert blocked.headers.get("retry-after")
+    assert "rate limit" in blocked.json()["detail"].lower()
