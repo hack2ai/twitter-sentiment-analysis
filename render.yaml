@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: twitter-sentiment-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: MAX_BATCH_ROWS
+        value: "1000"
+      - key: FRONTEND_ORIGIN
+        sync: false
+
+  - type: web
+    name: twitter-sentiment-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
