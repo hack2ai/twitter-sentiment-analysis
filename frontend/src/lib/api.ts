@@ -20,7 +20,7 @@ export interface WordCloudItem {
   value: number;
 }
 
-export interface Metrics {
+export interface Metrics extends Record<string, unknown> {
   accuracy: number;
   precision: number;
   recall: number;
