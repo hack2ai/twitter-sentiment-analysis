@@ -1,0 +1,10 @@
+Place Alembic revision files in this directory when the database schema changes.
+
+From `backend/`:
+
+```bash
+alembic revision --autogenerate -m "describe schema change"
+alembic upgrade head
+```
+
+The application currently creates missing tables at startup for the portfolio/demo workflow. Before a production database rollout, generate and review an initial Alembic revision and use migrations as the authoritative schema-change mechanism.

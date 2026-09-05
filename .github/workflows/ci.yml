@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/professional-upgrade]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q .
+
+      - name: Validate FastAPI application
+        env:
+          SECRET_KEY: ci-test-secret-key
+          ENVIRONMENT: test
+        run: python -c "from main import app; assert app.title"
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: sqlite:///data/sentiment.db
+        run: alembic upgrade head
+
+      - name: Run API tests
+        env:
+          SECRET_KEY: ci-test-secret-key
+          ENVIRONMENT: test
+          ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+          AUTH_RATE_LIMIT: "100"
+          AUTH_RATE_WINDOW_SECONDS: "60"
+          PYTHONPATH: .
+          DATABASE_URL: sqlite:///data/sentiment.db
+        run: pytest -q
+
+  frontend:
+    name: Frontend validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000

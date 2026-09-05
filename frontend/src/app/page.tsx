@@ -1,404 +1,294 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { analyzeText, analyzeBatch, fetchMetrics, fetchWordCloud, SentimentResult, BatchSentimentResult } from '@/lib/api';
-import { SentimentPieChart, ConfidenceChart } from '@/components/SentimentChart';
-import { MetricsDashboard } from '@/components/MetricsDashboard';
-import dynamic from 'next/dynamic';
-const WordCloud = dynamic(() => import('@/components/WordCloud').then(mod => mod.WordCloud), { ssr: false });
-import { MessageCircle, Upload, Loader2, AlertCircle, FileText, BarChart3, MessageSquareText, Activity, Layers } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  FileText,
+  Layers,
+  Loader2,
+  LogIn,
+  MessageCircle,
+  MessageSquareText,
+  ShieldCheck,
+  Sparkles,
+  Upload,
+  UserPlus,
+} from "lucide-react";
+
+import {
+  analyzeBatch,
+  analyzeText,
+  fetchMetrics,
+  fetchWordCloud,
+  getCurrentUser,
+  getStreamUrl,
+  type BatchSentimentResult,
+  type SentimentResult,
+  type WordCloudItem,
+  type AuthUser,
+} from "@/lib/api";
+import { MetricsDashboard } from "@/components/MetricsDashboard";
+import { getSessionUser, getToken } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+
+const WordCloud = dynamic(
+  () => import("@/components/WordCloud").then((module) => module.WordCloud),
+  { ssr: false }
+);
+
+type TabType = "dashboard" | "single" | "batch" | "stream";
+
+function sentimentClasses(sentiment: string) {
+  switch (sentiment.toLowerCase()) {
+    case "positive":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "negative":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState("");
-  
   const [singleResult, setSingleResult] = useState<SentimentResult | null>(null);
   const [batchResult, setBatchResult] = useState<BatchSentimentResult | null>(null);
-  
-  // Real-time Stream State
+  const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
+  const [words, setWords] = useState<WordCloudItem[]>([]);
   const [streamData, setStreamData] = useState<SentimentResult[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  // Global Dashboard State
-  const [metrics, setMetrics] = useState<any>(null);
-  const [words, setWords] = useState<any[]>([]);
-
-  type TabType = 'single' | 'batch' | 'stream' | 'dashboard';
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-
   useEffect(() => {
-    // Fetch global dashboard data on load
-    fetchMetrics().then(setMetrics).catch(console.error);
-    fetchWordCloud().then(setWords).catch(console.error);
-  }, []);
+    let mounted = true;
+    const token = getToken();
+    const cachedUser = getSessionUser();
 
-  const handleAnalyzeText = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!text.trim()) return;
-    
-    setLoading(true);
-    setError("");
-    try {
-      const res = await analyzeText(text);
-      setSingleResult(res);
-      setBatchResult(null);
-    } catch (err: any) {
-      setError(err.message || "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setLoading(true);
-    setError("");
-    try {
-      const res = await analyzeBatch(file);
-      setBatchResult(res);
-      setSingleResult(null);
-    } catch (err: any) {
-      setError(err.message || "An error occurred during file upload");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleStream = () => {
-    if (isStreaming) {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      setIsStreaming(false);
+    if (!token) {
+      setAuthLoading(false);
     } else {
-      setIsStreaming(true);
-      const source = new EventSource("http://localhost:8000/analyze/stream");
-      eventSourceRef.current = source;
-      
-      source.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        setStreamData(prev => [data, ...prev].slice(0, 50)); // Keep last 50
-      };
-      
-      source.onerror = () => {
-        source.close();
-        setIsStreaming(false);
-      };
+      setCurrentUser(cachedUser);
+      getCurrentUser(token)
+        .then((user) => {
+          if (mounted) setCurrentUser(user);
+        })
+        .catch(() => {
+          if (mounted) setCurrentUser(cachedUser);
+        })
+        .finally(() => {
+          if (mounted) setAuthLoading(false);
+        });
     }
-  };
 
-  useEffect(() => {
+    Promise.all([fetchMetrics(), fetchWordCloud()])
+      .then(([metricData, wordData]) => {
+        if (!mounted) return;
+        setMetrics(metricData);
+        setWords(wordData);
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+      .finally(() => {
+        if (mounted) setDashboardLoading(false);
+      });
+
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
+      mounted = false;
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
     };
   }, []);
 
-  const sentimentColor = (sentiment: string) => {
-    switch (sentiment) {
-      case 'positive': return 'text-emerald-500 bg-emerald-50 border-emerald-200';
-      case 'negative': return 'text-red-500 bg-red-50 border-red-200';
-      default: return 'text-slate-500 bg-slate-50 border-slate-200';
+  function switchTab(tab: TabType) {
+    setError("");
+    setSingleResult(null);
+    setBatchResult(null);
+    setActiveTab(tab);
+  }
+
+  async function handleAnalyzeText(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = text.trim();
+
+    if (!value) {
+      setError("Please enter some text to analyze.");
+      return;
     }
-  };
+
+    setLoading(true);
+    setError("");
+    try {
+      const result = await analyzeText(value);
+      setSingleResult(result);
+    } catch (err) {
+      setSingleResult(null);
+      setError(err instanceof Error ? err.message : "Unable to analyze the text.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setError("Please choose a CSV file.");
+      event.target.value = "";
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const result = await analyzeBatch(file);
+      setBatchResult(result);
+    } catch (err) {
+      setBatchResult(null);
+      setError(err instanceof Error ? err.message : "Unable to process the CSV file.");
+    } finally {
+      setLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  function toggleStream() {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsStreaming(false);
+      return;
+    }
+
+    setError("");
+    setStreamData([]);
+
+    const source = new EventSource(getStreamUrl());
+    eventSourceRef.current = source;
+    setIsStreaming(true);
+
+    source.onmessage = (event) => {
+      try {
+        const item = JSON.parse(event.data) as SentimentResult;
+        setStreamData((current) => [item, ...current].slice(0, 50));
+      } catch (err) {
+        console.error("Invalid stream payload", err);
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      eventSourceRef.current = null;
+      setIsStreaming(false);
+    };
+  }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm backdrop-blur-md bg-white/80">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-xl shadow-md">
-              <MessageCircle className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-              Twitter Sentiment AI
-            </h1>
-          </div>
-          
-          <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-            {(['dashboard', 'single', 'batch', 'stream'] as TabType[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "px-4 py-1.5 text-sm font-medium rounded-md capitalize transition-all duration-200",
-                  activeTab === tab 
-                    ? "bg-white text-indigo-700 shadow-sm" 
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-                )}
-              >
-                {tab === 'dashboard' ? 'Overview' : tab}
-              </button>
-            ))}
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+              <MessageCircle className="h-6 w-6 text-white" />
+            </span>
+            <span>
+              <span className="block text-lg font-black tracking-tight text-indigo-700 sm:text-xl">Twitter Sentiment AI</span>
+              <span className="hidden text-xs font-medium text-slate-400 sm:block">ML-powered social sentiment intelligence</span>
+            </span>
+          </Link>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="flex rounded-xl bg-slate-100 p-1">
+              {(["dashboard", "single", "batch", "stream"] as TabType[]).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => switchTab(tab)}
+                  className={cn(
+                    "rounded-lg px-3 py-2 text-sm font-semibold capitalize transition sm:px-4",
+                    activeTab === tab ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:bg-slate-200"
+                  )}
+                >
+                  {tab === "dashboard" ? "Overview" : tab}
+                </button>
+              ))}
+            </nav>
+
+            {!authLoading && currentUser ? (
+              <Link href="/dashboard" className="inline-flex max-w-[190px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-black text-indigo-700">{currentUser.name.slice(0, 1).toUpperCase()}</span>
+                <span className="truncate">{currentUser.name}</span>
+              </Link>
+            ) : !authLoading ? (
+              <>
+                <Link href="/login" className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-indigo-600 hover:bg-indigo-50">
+                  <LogIn className="h-4 w-4" /> Login
+                </Link>
+                <Link href="/register" className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-700">
+                  <UserPlus className="h-4 w-4" /> Register
+                </Link>
+              </>
+            ) : (
+              <div className="h-10 w-24 animate-pulse rounded-xl bg-slate-100" aria-label="Loading account" />
+            )}
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        
-        {/* DASHBOARD TAB */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex items-center gap-3 mb-6">
-              <Layers className="w-6 h-6 text-indigo-500" />
-              <h2 className="text-2xl font-bold text-slate-800">Model Overview & Insights</h2>
-            </div>
-            
-            {/* Word Cloud */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Trending Sentiment Keywords</h3>
-              <WordCloud words={words} />
-            </div>
-
-            {/* Metrics */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Model Evaluation Metrics</h3>
-              <MetricsDashboard metrics={metrics} />
-            </div>
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {error && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p className="text-sm font-semibold">{error}</p>
           </div>
         )}
 
-        {/* SINGLE & BATCH TABS */}
-        {(activeTab === 'single' || activeTab === 'batch') && (
-          <div className="grid lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="lg:col-span-5 space-y-6">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                {activeTab === 'single' ? (
-                  <form onSubmit={handleAnalyzeText} className="space-y-4">
-                    <div>
-                      <label htmlFor="tweet" className="block text-sm font-medium text-slate-700 mb-2">
-                        Enter Tweet Text
-                      </label>
-                      <textarea
-                        id="tweet"
-                        rows={5}
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        placeholder="E.g., I absolutely love the new features! 🚀"
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all resize-none shadow-inner"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={loading || !text.trim()}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md shadow-indigo-200"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageSquareText className="w-5 h-5" />}
-                      Analyze Sentiment
-                    </button>
-                  </form>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition-colors">
-                      <Upload className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                      <p className="text-sm font-medium text-slate-700 mb-1">Click to upload or drag and drop</p>
-                      <p className="text-xs text-slate-500 mb-4">CSV files only. Must contain a 'text' column.</p>
-                      
-                      <input
-                        type="file"
-                        id="csv-upload"
-                        accept=".csv"
-                        className="hidden"
-                        onChange={handleFileUpload}
-                      />
-                      <label 
-                        htmlFor="csv-upload"
-                        className="cursor-pointer bg-white border border-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors shadow-sm inline-flex items-center gap-2 text-sm"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Select File"}
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {error && (
-                  <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-xl flex items-start gap-3 border border-red-100">
-                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                    <p className="text-sm">{error}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 space-y-6">
-              {!singleResult && !batchResult && !loading && (
-                <div className="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
-                  <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-4">
-                    <BarChart3 className="w-10 h-10 text-indigo-400" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-2">Awaiting Data</h3>
-                  <p className="text-slate-500 max-w-sm">
-                    Enter a tweet or upload a dataset to generate sentiment analysis insights.
-                  </p>
-                </div>
-              )}
-
-              {loading && (
-                 <div className="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
-                    <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-                    <p className="text-slate-600 font-medium animate-pulse">Analyzing text through NLP models...</p>
-                 </div>
-              )}
-
-              {singleResult && !loading && activeTab === 'single' && (
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-indigo-500" />
-                    Analysis Results
-                  </h3>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className={cn("p-6 rounded-xl border text-center", sentimentColor(singleResult.sentiment))}>
-                      <p className="text-xs uppercase tracking-wider font-bold mb-1 opacity-80">Sentiment</p>
-                      <p className="text-3xl font-black capitalize">{singleResult.sentiment}</p>
-                    </div>
-                    <div className="p-6 rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 text-center">
-                      <p className="text-xs uppercase tracking-wider font-bold mb-1 opacity-80">Confidence</p>
-                      <p className="text-3xl font-black">{(singleResult.confidence * 100).toFixed(1)}%</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-1">Preprocessed Text (SpaCy/NLTK)</p>
-                      <div className="bg-slate-50 p-4 rounded-xl text-slate-700 text-sm font-mono border border-slate-100">
-                        {singleResult.cleaned_text || "No actionable text left after cleaning."}
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center text-xs text-slate-400 pt-4 border-t border-slate-100">
-                      <span>Model: <span className="font-medium text-slate-600">{singleResult.method === 'custom_ml' ? 'Scikit-Learn Custom' : 'VADER Fallback'}</span></span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {batchResult && !loading && activeTab === 'batch' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 text-center">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total</p>
-                      <p className="text-2xl font-black text-slate-800">{batchResult.summary.total}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-200 text-center">
-                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Positive</p>
-                      <p className="text-2xl font-black text-emerald-700">{batchResult.summary.positive}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 text-center">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Neutral</p>
-                      <p className="text-2xl font-black text-slate-700">{batchResult.summary.neutral}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-red-200 text-center">
-                      <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-1">Negative</p>
-                      <p className="text-2xl font-black text-red-700">{batchResult.summary.negative}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                      <h4 className="text-sm font-bold text-slate-700 mb-4">Sentiment Distribution</h4>
-                      <SentimentPieChart summary={batchResult.summary} />
-                    </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                      <h4 className="text-sm font-bold text-slate-700 mb-4">Confidence Distribution</h4>
-                      <ConfidenceChart results={batchResult.results} />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* STREAMING TAB */}
-        {activeTab === 'stream' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex items-center justify-between mb-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-              <div className="flex items-center gap-3">
-                <Activity className={cn("w-6 h-6", isStreaming ? "text-red-500 animate-pulse" : "text-slate-400")} />
+        {activeTab === "dashboard" && (
+          <div className="space-y-8">
+            <div className="rounded-3xl bg-gradient-to-br from-indigo-700 via-violet-700 to-slate-900 p-7 text-white shadow-xl sm:p-9">
+              <div className="grid gap-8 lg:grid-cols-[1.2fr_.8fr] lg:items-center">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-800">Real-Time Twitter Stream</h2>
-                  <p className="text-sm text-slate-500">Simulating live tweets analyzing via NLP model</p>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-white/80"><Sparkles className="h-3.5 w-3.5" /> AI sentiment workspace</div>
+                  <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl">Understand how people feel.</h1>
+                  <p className="mt-4 max-w-2xl text-base leading-7 text-white/75">Analyze individual messages, process CSV datasets, inspect model quality, and visualize live sentiment signals from one place.</p>
+                  <div className="mt-6 flex flex-wrap gap-3"><button type="button" onClick={() => switchTab("single")} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-black text-indigo-700 hover:bg-slate-100">Analyze text <ArrowRight className="h-4 w-4" /></button><button type="button" onClick={() => switchTab("batch")} className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-bold text-white hover:bg-white/15">Upload CSV</button></div>
                 </div>
+                <div className="rounded-3xl border border-white/10 bg-white/10 p-6 backdrop-blur"><div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-cyan-300" /><span className="text-sm font-bold text-white/80">Current model status</span></div><div className="mt-6 grid grid-cols-2 gap-4"><div className="rounded-2xl bg-black/15 p-4"><p className="text-xs uppercase tracking-wider text-white/60">Accuracy</p><p className="mt-2 text-2xl font-black">{dashboardLoading ? "—" : `${Number(metrics?.accuracy ?? 0) * 100}%`}</p></div><div className="rounded-2xl bg-black/15 p-4"><p className="text-xs uppercase tracking-wider text-white/60">F1 Score</p><p className="mt-2 text-2xl font-black">{dashboardLoading ? "—" : `${Number(metrics?.f1_score ?? 0) * 100}%`}</p></div></div><p className="mt-5 text-xs leading-5 text-white/55">Metrics are loaded directly from the backend model evaluation endpoint.</p></div>
               </div>
-              <button
-                onClick={toggleStream}
-                className={cn(
-                  "px-6 py-2 rounded-xl font-bold transition-all shadow-md",
-                  isStreaming 
-                    ? "bg-red-100 text-red-700 hover:bg-red-200" 
-                    : "bg-indigo-600 text-white hover:bg-indigo-700"
-                )}
-              >
-                {isStreaming ? 'Stop Stream' : 'Start Stream'}
-              </button>
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                {streamData.length === 0 ? (
-                  <div className="text-center p-12 bg-white rounded-2xl border border-slate-200 border-dashed">
-                    <p className="text-slate-500">No tweets yet. Start the stream to receive live data.</p>
-                  </div>
-                ) : (
-                  streamData.map((item, idx) => (
-                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-start gap-4 animate-in slide-in-from-top-2">
-                      <div className={cn("p-3 rounded-full mt-1", sentimentColor(item.sentiment))}>
-                         <MessageSquareText className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-slate-800 mb-2">{item.text || item.original_text}</p>
-                        <div className="flex gap-4 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          <span className={sentimentColor(item.sentiment).split(' ')[0]}>{item.sentiment}</span>
-                          <span>Conf: {(item.confidence * 100).toFixed(0)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h4 className="text-sm font-bold text-slate-700 mb-4">Live Sentiment Ratio</h4>
-                  <div className="space-y-4">
-                    {['positive', 'neutral', 'negative'].map((sent) => {
-                      const count = streamData.filter(d => d.sentiment === sent).length;
-                      const percent = streamData.length ? (count / streamData.length) * 100 : 0;
-                      const colors: Record<string, string> = {
-                        positive: 'bg-emerald-500',
-                        neutral: 'bg-slate-400',
-                        negative: 'bg-red-500'
-                      };
-                      return (
-                        <div key={sent}>
-                          <div className="flex justify-between text-xs font-bold mb-1 capitalize text-slate-700">
-                            <span>{sent}</span>
-                            <span>{count}</span>
-                          </div>
-                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-500 ${colors[sent]}`} 
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div className="flex items-end justify-between gap-4"><div><div className="flex items-center gap-2 text-indigo-600"><Layers className="h-5 w-5" /><span className="text-xs font-black uppercase tracking-[0.2em]">Analytics</span></div><h2 className="mt-2 text-2xl font-black text-slate-900">Model Overview &amp; Insights</h2></div></div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-black text-slate-800">Trending Sentiment Keywords</h3><p className="mt-1 text-sm text-slate-500">The most frequent sentiment-bearing terms currently exposed by the API.</p></div><BarChart3 className="h-5 w-5 text-indigo-500" /></div><div className="mt-6 min-h-[280px] rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:p-8">{words.length ? <WordCloud words={words} /> : <div className="grid min-h-[230px] place-items-center text-sm font-semibold text-slate-400">No word-cloud data available.</div>}</div></div>
+            <div><h3 className="mb-4 text-xl font-black text-slate-800">Model Evaluation Metrics</h3><MetricsDashboard metrics={metrics} /></div>
           </div>
         )}
 
-      </div>
+        {activeTab === "single" && (
+          <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]"><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="mb-6"><div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><MessageSquareText className="h-6 w-6" /></div><h2 className="text-2xl font-black">Single Text Analysis</h2><p className="mt-2 text-sm leading-6 text-slate-500">Classify one tweet, review, or message with the configured NLP pipeline.</p></div><form onSubmit={handleAnalyzeText} className="space-y-4"><textarea id="single-text" value={text} onChange={(event) => setText(event.target.value)} rows={9} maxLength={5000} placeholder="Example: I absolutely love the new features!" className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100" /><div className="flex justify-between text-xs text-slate-400"><span>Maximum 5,000 characters</span><span>{text.length}/5000</span></div><button type="submit" disabled={loading || !text.trim()} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3.5 text-sm font-black text-white shadow-md hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <MessageSquareText className="h-5 w-5" />}{loading ? "Analyzing..." : "Analyze sentiment"}</button></form></div><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">{!singleResult && !loading && <div className="grid min-h-[410px] place-items-center text-center"><div><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-indigo-50"><FileText className="h-10 w-10 text-indigo-500" /></div><h3 className="mt-5 text-xl font-black text-slate-800">Your result will appear here</h3><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">You will receive sentiment, confidence, cleaned text, and the model used.</p></div></div>}{loading && <div className="grid min-h-[410px] place-items-center text-center"><Loader2 className="mx-auto h-12 w-12 animate-spin text-indigo-600" /><p className="mt-4 text-sm font-semibold text-slate-600">Running NLP sentiment analysis...</p></div>}{singleResult && !loading && <div><div className="flex items-center gap-3"><CheckCircle2 className="h-6 w-6 text-indigo-600" /><h3 className="text-xl font-black">Analysis Results</h3></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><div className={cn("rounded-2xl border p-6 text-center", sentimentClasses(singleResult.sentiment))}><p className="text-xs font-bold uppercase tracking-wider">Sentiment</p><p className="mt-2 text-3xl font-black capitalize">{singleResult.sentiment}</p></div><div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-6 text-center text-indigo-700"><p className="text-xs font-bold uppercase tracking-wider">Confidence</p><p className="mt-2 text-3xl font-black">{(singleResult.confidence * 100).toFixed(1)}%</p></div></div><div className="mt-6 space-y-4"><div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Cleaned text</p><p className="mt-2 break-words text-sm leading-6 text-slate-700">{singleResult.cleaned_text}</p></div><div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Model method</p><p className="mt-2 text-sm font-semibold text-slate-700">{singleResult.method}</p></div></div></div>}</div></div>
+        )}
+
+        {activeTab === "batch" && (
+          <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]"><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="mb-6"><div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"><Upload className="h-6 w-6" /></div><h2 className="text-2xl font-black">Batch CSV Analysis</h2><p className="mt-2 text-sm leading-6 text-slate-500">Upload a CSV containing a text, tweet, content, or message column.</p></div><label htmlFor="csv-upload" className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center transition hover:border-indigo-400 hover:bg-indigo-50"><Upload className="h-10 w-10 text-slate-400" /><span className="mt-4 text-sm font-black text-slate-700">Choose a CSV file</span><span className="mt-1 text-xs text-slate-400">Maximum 1,000 rows by default</span><input id="csv-upload" type="file" accept=".csv,text/csv" className="sr-only" onChange={handleFileUpload} disabled={loading} /></label></div><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">{!batchResult && !loading && <div className="grid min-h-[360px] place-items-center text-center"><div><BarChart3 className="mx-auto h-12 w-12 text-slate-300" /><h3 className="mt-4 text-xl font-black text-slate-800">Batch results appear here</h3><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">Upload your dataset to see sentiment counts, percentages, and row-level predictions.</p></div></div>}{loading && <div className="grid min-h-[360px] place-items-center text-center"><Loader2 className="mx-auto h-12 w-12 animate-spin text-indigo-600" /><p className="mt-4 text-sm font-semibold text-slate-600">Processing your CSV...</p></div>}{batchResult && !loading && <div><h3 className="text-xl font-black">Batch Summary</h3><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{([['positive','Positive'],['negative','Negative'],['neutral','Neutral'],['total','Total']] as const).map(([key,label]) => <div key={key} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-2 text-2xl font-black text-slate-800">{batchResult.summary[key]}</p></div>)}</div><div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><div className="max-h-[420px] overflow-auto"><table className="min-w-full text-left text-sm"><thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wider text-slate-400"><tr><th className="px-4 py-3 font-bold">Text</th><th className="px-4 py-3 font-bold">Sentiment</th><th className="px-4 py-3 font-bold">Confidence</th></tr></thead><tbody className="divide-y divide-slate-100">{batchResult.results.map((item,index) => <tr key={`${item.cleaned_text}-${index}`}><td className="max-w-md px-4 py-3 text-slate-700">{item.cleaned_text}</td><td className="px-4 py-3"><span className={cn("rounded-full border px-2.5 py-1 text-xs font-bold capitalize", sentimentClasses(item.sentiment))}>{item.sentiment}</span></td><td className="px-4 py-3 font-semibold text-slate-600">{(item.confidence*100).toFixed(1)}%</td></tr>)}</tbody></table></div></div></div>}</div></div>
+        )}
+
+        {activeTab === "stream" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><Activity className="h-5 w-5 text-indigo-600" /><h2 className="text-2xl font-black">Live Sentiment Stream</h2></div><p className="mt-2 text-sm leading-6 text-slate-500">Receive simulated server-sent events from the backend in real time.</p></div><button type="button" onClick={toggleStream} className={cn("inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black text-white", isStreaming ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700")}>{isStreaming ? "Stop stream" : "Start stream"}</button></div><div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><div className="max-h-[520px] overflow-auto">{streamData.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><Activity className="mx-auto h-12 w-12 text-slate-300" /><p className="mt-4 text-sm font-semibold text-slate-500">{isStreaming ? "Waiting for the first event..." : "Start the stream to see live predictions."}</p></div></div> : <div className="divide-y divide-slate-100">{streamData.map((item,index)=><div key={`${item.cleaned_text}-${index}`} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-700">{item.cleaned_text}</p><p className="mt-1 text-xs text-slate-400">{item.method}</p></div><div className="flex items-center gap-3"><span className={cn("rounded-full border px-2.5 py-1 text-xs font-bold capitalize", sentimentClasses(item.sentiment))}>{item.sentiment}</span><span className="text-xs font-bold text-slate-500">{(item.confidence*100).toFixed(1)}%</span></div></div>)}</div>}</div></div></div>
+        )}
+      </section>
     </main>
   );
 }
