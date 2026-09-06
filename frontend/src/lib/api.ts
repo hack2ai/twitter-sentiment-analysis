@@ -11,8 +11,21 @@ export interface SentimentResult {
 
 export interface BatchSentimentResult {
   results: SentimentResult[];
-  summary: { positive: number; negative: number; neutral: number; total: number };
-  metadata: { file_name: string; text_column: string; rows_received: number; rows_analyzed: number; rows_skipped: number; percentages: Record<string, number> };
+  summary: {
+    total_processed: number;
+    skipped_rows: number;
+    positive: number;
+    negative: number;
+    neutral: number;
+    positive_percentage: number;
+    negative_percentage: number;
+    neutral_percentage: number;
+  };
+  metadata: {
+    text_column: string;
+    max_rows: number;
+    max_file_bytes: number;
+  };
 }
 
 export interface WordCloudItem {
@@ -108,4 +121,4 @@ export async function fetchWordCloud(): Promise<WordCloudItem[]> {
   return Array.isArray(payload) ? payload : payload.words ?? [];
 }
 
-export function getStreamUrl() { return `${API_URL}/analyze/stream`; }
+export function getStreamUrl() { return `${API_URL}/stream`; }
