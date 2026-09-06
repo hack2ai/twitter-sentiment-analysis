@@ -8,6 +8,8 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: DATABASE_URL
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
