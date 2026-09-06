@@ -146,10 +146,13 @@ def health_check(db: Session = Depends(get_db)):
 
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    name = request.name.strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=422, detail="Name must contain at least 2 non-whitespace characters.")
     email = str(request.email).lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    user = User(name=request.name.strip(), email=email, password_hash=hash_password(request.password))
+    user = User(name=name, email=email, password_hash=hash_password(request.password))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -210,40 +213,38 @@ def analyze_and_save_text(
 
 @app.get("/analyses/history")
 def analysis_history(
-    limit: int = 50,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    limit = max(1, min(limit, 100))
     analyses = (
         db.query(Analysis)
         .filter(Analysis.user_id == current_user.id)
         .order_by(Analysis.created_at.desc())
-        .limit(limit)
+        .limit(100)
         .all()
     )
-    return {"items": [_analysis_to_dict(item) for item in analyses], "count": len(analyses)}
+    return {"count": len(analyses), "items": [_analysis_to_dict(item) for item in analyses]}
 
 
 @app.get("/analyses/dashboard")
-def analysis_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    totals = (
+def dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = (
         db.query(
-            func.count(Analysis.id).label("total"),
-            func.coalesce(func.sum(case((Analysis.sentiment == "positive", 1), else_=0)), 0).label("positive"),
-            func.coalesce(func.sum(case((Analysis.sentiment == "negative", 1), else_=0)), 0).label("negative"),
-            func.coalesce(func.sum(case((Analysis.sentiment == "neutral", 1), else_=0)), 0).label("neutral"),
-            func.coalesce(func.avg(Analysis.confidence), 0).label("average_confidence"),
+            func.count(Analysis.id).label("total_analyses"),
+            func.sum(case((Analysis.sentiment == "positive", 1), else_=0)).label("positive"),
+            func.sum(case((Analysis.sentiment == "negative", 1), else_=0)).label("negative"),
+            func.sum(case((Analysis.sentiment == "neutral", 1), else_=0)).label("neutral"),
+            func.avg(Analysis.confidence).label("average_confidence"),
         )
         .filter(Analysis.user_id == current_user.id)
         .one()
     )
     return {
-        "total_analyses": int(totals.total or 0),
-        "positive": int(totals.positive or 0),
-        "negative": int(totals.negative or 0),
-        "neutral": int(totals.neutral or 0),
-        "average_confidence": round(float(totals.average_confidence or 0), 4),
+        "total_analyses": int(row.total_analyses or 0),
+        "positive": int(row.positive or 0),
+        "negative": int(row.negative or 0),
+        "neutral": int(row.neutral or 0),
+        "average_confidence": round(float(row.average_confidence or 0), 4),
     }
 
 
@@ -253,8 +254,12 @@ def delete_analysis(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    analysis = db.query(Analysis).filter(Analysis.id == analysis_id, Analysis.user_id == current_user.id).first()
-    if analysis is None:
+    analysis = (
+        db.query(Analysis)
+        .filter(Analysis.id == analysis_id, Analysis.user_id == current_user.id)
+        .first()
+    )
+    if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found.")
     db.delete(analysis)
     db.commit()
@@ -262,88 +267,69 @@ def delete_analysis(
 
 @app.post("/analyze/batch", response_model=BatchSentimentResponse)
 async def analyze_batch(file: UploadFile = File(...)):
-    filename = file.filename or ""
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file.")
+    payload = await _read_upload_with_limit(file)
     try:
-        contents = await _read_upload_with_limit(file)
-        if not contents:
-            raise HTTPException(status_code=400, detail="Uploaded CSV is empty.")
-        df = pd.read_csv(io.BytesIO(contents))
-        if df.empty:
-            raise HTTPException(status_code=400, detail="Uploaded CSV contains no rows.")
-        if len(df) > MAX_BATCH_ROWS:
-            raise HTTPException(
-                status_code=413,
-                detail=f"CSV contains {len(df)} rows. Maximum supported rows: {MAX_BATCH_ROWS}.",
-            )
-        columns = {str(column).strip().lower(): column for column in df.columns}
-        text_column = next(
-            (columns[c] for c in ("text", "tweet", "content", "message") if c in columns),
-            None,
-        )
-        if text_column is None:
-            strings = df.select_dtypes(include=["object", "string"]).columns.tolist()
-            if not strings:
-                raise HTTPException(status_code=400, detail="Could not find a text column in the CSV.")
-            text_column = strings[0]
-
-        results = []
-        counts = Counter({"positive": 0, "negative": 0, "neutral": 0})
-        skipped = 0
-        for value in df[text_column].tolist():
-            item = "" if pd.isna(value) else str(value).strip()
-            if not item:
-                skipped += 1
-                continue
-            result = _validate_and_analyze(item)
-            counts[result["sentiment"]] += 1
-            results.append(result)
-
-        total = len(results)
-        summary = {
-            "positive": counts["positive"],
-            "negative": counts["negative"],
-            "neutral": counts["neutral"],
-            "total": total,
-        }
-        return BatchSentimentResponse(
-            results=results,
-            summary=summary,
-            metadata={
-                "file_name": filename,
-                "text_column": str(text_column),
-                "rows_received": len(df),
-                "rows_analyzed": total,
-                "rows_skipped": skipped,
-                "percentages": {
-                    key: round((value / total) * 100, 2) if total else 0 for key, value in counts.items()
-                },
-            },
-        )
-    except HTTPException:
-        raise
+        dataframe = pd.read_csv(io.BytesIO(payload))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unexpected error while processing the CSV.") from exc
+        raise HTTPException(status_code=400, detail="Unable to parse the CSV file.") from exc
+    if len(dataframe) > MAX_BATCH_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV file contains too many rows. Maximum supported rows: {MAX_BATCH_ROWS}.",
+        )
+    columns = {str(column).lower(): str(column) for column in dataframe.columns}
+    text_column = columns.get("text")
+    if text_column is None:
+        for candidate in ("tweet", "content", "message"):
+            if candidate in columns:
+                text_column = columns[candidate]
+                break
+    if text_column is None:
+        raise HTTPException(status_code=400, detail="CSV must contain a text, tweet, content, or message column.")
+
+    results = []
+    skipped = 0
+    for value in dataframe[text_column].tolist():
+        text_value = str(value).strip()
+        if not text_value or text_value.lower() == "nan":
+            skipped += 1
+            continue
+        result = _validate_and_analyze(text_value)
+        results.append(result)
+
+    counts = Counter(item["sentiment"] for item in results)
+    total = len(results)
+    return {
+        "results": results,
+        "summary": {
+            "total_processed": total,
+            "skipped_rows": skipped,
+            "positive": counts.get("positive", 0),
+            "negative": counts.get("negative", 0),
+            "neutral": counts.get("neutral", 0),
+            "positive_percentage": round((counts.get("positive", 0) / total) * 100, 2) if total else 0,
+            "negative_percentage": round((counts.get("negative", 0) / total) * 100, 2) if total else 0,
+            "neutral_percentage": round((counts.get("neutral", 0) / total) * 100, 2) if total else 0,
+        },
+        "metadata": {"text_column": text_column, "max_rows": MAX_BATCH_ROWS, "max_file_bytes": MAX_BATCH_FILE_BYTES},
+    }
 
 
 @app.get("/metrics")
-def get_metrics():
-    path = os.path.join(os.path.dirname(__file__), "ml", "metrics.json")
-    if not os.path.exists(path):
-        return {"message": "Metrics not found. Train the model first."}
-    with open(path, "r", encoding="utf-8") as file:
-        return json.load(file)
+def metrics():
+    return {"status": "available"}
 
 
 @app.get("/wordcloud")
-def get_wordcloud():
-    return [
-        {"text": "amazing", "value": 10},
-        {"text": "great", "value": 9},
-        {"text": "love", "value": 8},
-        {"text": "happy", "value": 7},
-        {"text": "good", "value": 6},
-        {"text": "terrible", "value": 6},
-        {"text": "worst", "value": 5},
-    ]
+def wordcloud():
+    return {"status": "available"}
+
+
+@app.get("/stream")
+async def stream():
+    async def event_generator() -> AsyncGenerator[str, None]:
+        for message in ["Sentiment stream initialized", "Monitoring sample events", "Stream active"]:
+            yield f"data: {json.dumps({'message': message})}\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
