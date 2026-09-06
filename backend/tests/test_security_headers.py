@@ -1,4 +1,5 @@
 import os
+import uuid
 
 os.environ.setdefault("AUTH_RATE_LIMIT", "100")
 os.environ.setdefault("AUTH_RATE_WINDOW_SECONDS", "60")
@@ -27,3 +28,15 @@ def test_production_responses_include_hsts(monkeypatch) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+
+
+def test_duplicate_registration_returns_conflict() -> None:
+    email = f"duplicate-{uuid.uuid4().hex[:10]}@example.com"
+    payload = {"name": "Duplicate Test", "email": email, "password": "TestPassword123!"}
+
+    first = client.post("/auth/register", json=payload)
+    assert first.status_code == 201
+
+    duplicate = client.post("/auth/register", json=payload)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "An account with this email already exists."
