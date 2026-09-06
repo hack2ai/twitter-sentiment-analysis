@@ -9,7 +9,17 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'sentiment.db'}"
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+CONFIGURED_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+
+def validate_database_url(environment: str, database_url: str) -> None:
+    if environment.strip().lower() == "production" and not database_url.strip():
+        raise RuntimeError("DATABASE_URL must be set when ENVIRONMENT=production.")
+
+
+validate_database_url(ENVIRONMENT, CONFIGURED_DATABASE_URL)
+DATABASE_URL = CONFIGURED_DATABASE_URL or DEFAULT_DATABASE_URL
 
 url = make_url(DATABASE_URL)
 connect_args = {"check_same_thread": False} if url.get_backend_name() == "sqlite" else {}
