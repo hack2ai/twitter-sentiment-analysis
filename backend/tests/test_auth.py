@@ -1,7 +1,9 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
+from auth import DEVELOPMENT_SECRET_KEY, validate_secret_key
 from main import app
 
 
@@ -31,3 +33,17 @@ def test_register_login_and_me():
 def test_protected_route_requires_token():
     response = client.get("/analyses/history")
     assert response.status_code in {401, 403}
+
+
+@pytest.mark.parametrize("secret_key", ["", "   ", DEVELOPMENT_SECRET_KEY])
+def test_production_requires_a_unique_secret_key(secret_key: str):
+    with pytest.raises(RuntimeError, match="SECRET_KEY must be set to a strong unique value"):
+        validate_secret_key("production", secret_key)
+
+
+def test_production_accepts_a_unique_secret_key():
+    validate_secret_key("production", "a-strong-unique-production-secret")
+
+
+def test_non_production_allows_development_secret_key():
+    validate_secret_key("development", DEVELOPMENT_SECRET_KEY)
