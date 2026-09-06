@@ -17,7 +17,7 @@ def test_batch_rejects_non_csv_upload() -> None:
         files={"file": ("notes.txt", b"text\nhello\n", "text/plain")},
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == "Only CSV files are supported."
+    assert response.json()["detail"] == "Please upload a CSV file."
 
 
 def test_batch_accepts_text_column(monkeypatch) -> None:
@@ -37,7 +37,16 @@ def test_batch_accepts_text_column(monkeypatch) -> None:
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["summary"] == {"positive": 2, "negative": 0, "neutral": 0, "total": 2}
+    assert payload["summary"] == {
+        "total_processed": 2,
+        "skipped_rows": 0,
+        "positive": 2,
+        "negative": 0,
+        "neutral": 0,
+        "positive_percentage": 100.0,
+        "negative_percentage": 0.0,
+        "neutral_percentage": 0.0,
+    }
     assert payload["metadata"]["rows_received"] == 2
     assert payload["metadata"]["rows_analyzed"] == 2
     assert payload["metadata"]["rows_skipped"] == 0
@@ -52,7 +61,7 @@ def test_batch_enforces_row_limit(monkeypatch) -> None:
         files={"file": ("rows.csv", b"text\nfirst\nsecond\n", "text/csv")},
     )
     assert response.status_code == 413
-    assert response.json()["detail"] == "CSV contains 2 rows. Maximum supported rows: 1."
+    assert response.json()["detail"] == "CSV file contains too many rows. Maximum supported rows: 1."
 
 
 def test_batch_reports_missing_text_column() -> None:
@@ -61,4 +70,4 @@ def test_batch_reports_missing_text_column() -> None:
         files={"file": ("numbers.csv", b"id,score\n1,10\n2,20\n", "text/csv")},
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == "Could not find a text column in the CSV."
+    assert response.json()["detail"] == "CSV must contain a text, tweet, content, or message column."
