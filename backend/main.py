@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 from collections import Counter
+from pathlib import Path
 from typing import AsyncGenerator, List
 
 import pandas as pd
@@ -27,6 +29,14 @@ MAX_BATCH_FILE_BYTES = int(os.getenv("MAX_BATCH_FILE_BYTES", str(10 * 1024 * 102
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "5"))
 AUTH_RATE_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_WINDOW_SECONDS", "60"))
+BASE_DIR = Path(__file__).resolve().parent
+METRICS_FILE = BASE_DIR / "ml" / "metrics.json"
+DATASET_FILE = BASE_DIR / "dataset" / "sentiment.csv"
+WORDCLOUD_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "has", "have", "he", "her",
+    "his", "i", "in", "is", "it", "its", "me", "my", "of", "on", "or", "our", "that", "the", "their",
+    "this", "to", "was", "we", "were", "with", "you", "your", "im", "ive", "dont", "did", "not", "so",
+}
 
 app = FastAPI(
     title="Social Sentiment Intelligence API",
@@ -128,6 +138,32 @@ def _analysis_to_dict(analysis: Analysis) -> dict:
         "method": analysis.method,
         "created_at": analysis.created_at.isoformat(),
     }
+
+
+def _load_metrics() -> dict:
+    try:
+        with METRICS_FILE.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail="Model metrics are currently unavailable.") from exc
+    required = {"accuracy", "precision", "recall", "f1_score", "confusion_matrix", "classes"}
+    if not required.issubset(payload):
+        raise HTTPException(status_code=503, detail="Model metrics are incomplete.")
+    return payload
+
+
+def _load_wordcloud_words(limit: int = 50) -> list[dict]:
+    try:
+        dataframe = pd.read_csv(DATASET_FILE, usecols=["text"])
+    except (OSError, ValueError, pd.errors.EmptyDataError) as exc:
+        raise HTTPException(status_code=503, detail="Word cloud data is currently unavailable.") from exc
+
+    counts: Counter[str] = Counter()
+    for value in dataframe["text"].dropna().astype(str):
+        tokens = re.findall(r"[a-zA-Z]{3,}", value.lower())
+        counts.update(token for token in tokens if token not in WORDCLOUD_STOPWORDS)
+
+    return [{"text": word, "value": count} for word, count in counts.most_common(limit)]
 
 
 @app.get("/")
@@ -319,12 +355,12 @@ async def analyze_batch(file: UploadFile = File(...)):
 
 @app.get("/metrics")
 def metrics():
-    return {"status": "available"}
+    return _load_metrics()
 
 
 @app.get("/wordcloud")
 def wordcloud():
-    return {"status": "available"}
+    return {"words": _load_wordcloud_words()}
 
 
 @app.get("/stream")
