@@ -28,6 +28,7 @@ services:
     runtime: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
+    healthCheckPath: /
     envVars:
       - key: NEXT_PUBLIC_API_URL
         sync: false
