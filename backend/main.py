@@ -152,17 +152,24 @@ def _load_metrics() -> dict:
     return payload
 
 
-def _load_wordcloud_words(limit: int = 50) -> list[dict]:
+def _load_dataset_texts(limit: int = 20) -> list[str]:
     try:
         dataframe = pd.read_csv(DATASET_FILE, usecols=["text"])
     except (OSError, ValueError, pd.errors.EmptyDataError) as exc:
-        raise HTTPException(status_code=503, detail="Word cloud data is currently unavailable.") from exc
+        raise HTTPException(status_code=503, detail="Stream data is currently unavailable.") from exc
+    return [
+        value.strip()
+        for value in dataframe["text"].dropna().astype(str).tolist()
+        if value.strip() and len(value.strip()) <= 5000
+    ][:limit]
 
+
+def _load_wordcloud_words(limit: int = 50) -> list[dict]:
+    texts = _load_dataset_texts(limit=10000)
     counts: Counter[str] = Counter()
-    for value in dataframe["text"].dropna().astype(str):
+    for value in texts:
         tokens = re.findall(r"[a-zA-Z]{3,}", value.lower())
         counts.update(token for token in tokens if token not in WORDCLOUD_STOPWORDS)
-
     return [{"text": word, "value": count} for word, count in counts.most_common(limit)]
 
 
@@ -366,6 +373,15 @@ def wordcloud():
 @app.get("/stream")
 async def stream():
     async def event_generator() -> AsyncGenerator[str, None]:
-        for message in ["Sentiment stream initialized", "Monitoring sample events", "Stream active"]:
-            yield f"data: {json.dumps({'message': message})}\n\n"
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+        for text_value in _load_dataset_texts(limit=20):
+            result = _validate_and_analyze(text_value)
+            yield f"data: {json.dumps(result)}\n\n"
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
