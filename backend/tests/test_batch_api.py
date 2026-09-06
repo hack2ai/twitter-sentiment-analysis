@@ -47,10 +47,11 @@ def test_batch_accepts_text_column(monkeypatch) -> None:
         "negative_percentage": 0.0,
         "neutral_percentage": 0.0,
     }
-    assert payload["metadata"]["rows_received"] == 2
-    assert payload["metadata"]["rows_analyzed"] == 2
-    assert payload["metadata"]["rows_skipped"] == 0
-    assert payload["metadata"]["text_column"] == "text"
+    assert payload["metadata"] == {
+        "text_column": "text",
+        "max_rows": main_module.MAX_BATCH_ROWS,
+        "max_file_bytes": main_module.MAX_BATCH_FILE_BYTES,
+    }
     assert len(payload["results"]) == 2
 
 
