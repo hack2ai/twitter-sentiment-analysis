@@ -159,6 +159,35 @@ def test_analyze_text() -> None:
     assert payload["cleaned_text"]
 
 
+def test_text_validation_rejects_empty_and_oversized_input() -> None:
+    empty = client.post("/analyze/text", json={"text": ""})
+    oversized = client.post("/analyze/text", json={"text": "x" * 5001})
+
+    assert empty.status_code == 422
+    assert oversized.status_code == 422
+
+
+def test_registration_validation_rejects_invalid_payloads() -> None:
+    base_email = f"validation-{uuid.uuid4().hex[:10]}@example.com"
+
+    short_password = client.post(
+        "/auth/register",
+        json={"name": "Valid Name", "email": base_email, "password": "short"},
+    )
+    invalid_email = client.post(
+        "/auth/register",
+        json={"name": "Valid Name", "email": "not-an-email", "password": "TestPassword123!"},
+    )
+    short_name = client.post(
+        "/auth/register",
+        json={"name": "A", "email": f"name-{uuid.uuid4().hex[:10]}@example.com", "password": "TestPassword123!"},
+    )
+
+    assert short_password.status_code == 422
+    assert invalid_email.status_code == 422
+    assert short_name.status_code == 422
+
+
 def test_auth_rate_limit_returns_429() -> None:
     limited_app = FastAPI()
     limited_app.add_middleware(AuthRateLimitMiddleware, limit=2, window_seconds=60)
