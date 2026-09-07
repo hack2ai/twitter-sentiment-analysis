@@ -1,123 +1,142 @@
 # Twitter Sentiment AI
 
-A full-stack NLP application for analyzing social-media text and visualizing sentiment intelligence. The project combines a Next.js frontend with a FastAPI machine-learning backend and includes authentication, persistent user history, CSV batch analysis, model evaluation, a keyword word cloud, and a real-time Server-Sent Events demo.
+<p align="center">
+  <strong>AI-powered full-stack sentiment intelligence for social-media text</strong>
+</p>
 
-## Highlights
+<p align="center">
+  Analyze individual messages, process CSV datasets, inspect model quality, explore keyword trends, and consume sentiment events through a modern web interface.
+</p>
 
-- **Single-text sentiment analysis** with sentiment, confidence, cleaned text, and model information.
-- **Batch CSV analysis** with automatic text-column detection and configurable row and file-size limits.
-- **Interactive analytics** with sentiment distribution, confidence distribution, model metrics, and confusion matrix.
-- **Trending sentiment keywords** through a backend-powered word cloud.
-- **Real-time sentiment stream** using Server-Sent Events (SSE).
-- **Authentication** with registration, login, JWT-based protected routes, and per-user analysis history.
-- **Persistent history** with dashboard totals, average confidence, search/export UI, and analysis deletion.
-- **Request protection** with configurable authentication rate limiting.
-- **Database migrations** managed through Alembic with an initial schema revision.
-- **Docker Compose** setup for running the frontend and backend together with persistent backend data storage.
-- **Environment-based configuration** for API origin, CORS, JWT settings, rate limits, database URL, and batch limits.
+<p align="center">
+  <a href="https://github.com/hack2ai/twitter-sentiment-analysis/actions/workflows/ci.yml"><img src="https://github.com/hack2ai/twitter-sentiment-analysis/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/hack2ai/twitter-sentiment-analysis/actions/workflows/codeql.yml"><img src="https://github.com/hack2ai/twitter-sentiment-analysis/actions/workflows/codeql.yml/badge.svg" alt="CodeQL" /></a>
+</p>
+
+## Overview
+
+Twitter Sentiment AI is a portfolio-grade NLP application built around a **Next.js + TypeScript frontend** and a **FastAPI + Python machine-learning backend**. It provides single-text inference, batch CSV analysis, model evaluation dashboards, trending keyword visualization, authentication, persistent analysis history, and a Server-Sent Events (SSE) stream.
+
+The application is designed to demonstrate end-to-end software engineering: frontend development, REST APIs, machine-learning inference, database persistence, security controls, automated testing, containerization, CI/CD checks, and deployment configuration.
+
+> **Important:** Despite the repository name, the current live-stream feature is a demo SSE feed backed by the included dataset. It is not a direct integration with the X/Twitter API.
+
+## Features
+
+| Area | Capabilities |
+|---|---|
+| **Sentiment Analysis** | Positive, negative, or neutral classification with confidence, cleaned text, and inference method |
+| **Batch Processing** | CSV upload, automatic text-column detection, row/file-size limits, per-row predictions, summary statistics |
+| **Analytics** | Accuracy, precision, recall, F1 score, confusion matrix, sentiment distribution, confidence distribution |
+| **Keyword Insights** | Backend-generated trending sentiment keywords and word-cloud visualization |
+| **Streaming** | Server-Sent Events endpoint that emits sentiment predictions from the included dataset |
+| **Authentication** | Registration, login, JWT bearer tokens, authenticated user profile |
+| **History** | Save analyses, search/export in the UI, dashboard totals, average confidence, delete owned analyses |
+| **Security** | bcrypt password hashing, validation, CORS policy, security headers, authentication rate limiting, production secret/database checks |
+| **Database** | SQLAlchemy persistence with SQLite-compatible local development and PostgreSQL support |
+| **Migrations** | Alembic-managed schema migrations with an initial production-ready revision |
+| **DevOps** | Docker, Docker Compose, GitHub Actions, CodeQL, Dependabot, Render deployment blueprint |
 
 ## Architecture
 
 ```text
-                       +----------------------+
-                       |   Next.js Frontend   |
-                       | TypeScript + Tailwind|
-                       +----------+-----------+
-                                  |
-                    REST API + Server-Sent Events
-                                  |
-                       +----------v-----------+
-                       |    FastAPI Backend   |
-                       +----------+-----------+
-                                  |
-             +--------------------+--------------------+
-             |                    |                    |
-             v                    v                    v
-      Authentication        NLP / ML Pipeline     Analytics APIs
-      JWT + bcrypt          TF-IDF + classifier    Metrics + word cloud
-             |                    |                    |
-             +--------------------+--------------------+
-                                  |
-                                  v
-                         SQLAlchemy database
-                         User analysis history
-                                  |
-                                  v
-                         Alembic migrations
+┌───────────────────────────────────────┐
+│          Next.js Frontend             │
+│ TypeScript • Tailwind • Recharts      │
+└───────────────────┬───────────────────┘
+                    │
+             REST API + SSE
+                    │
+┌───────────────────▼───────────────────┐
+│            FastAPI Backend            │
+│ Auth • Validation • Analysis • APIs   │
+└───────────────┬───────────┬───────────┘
+                │           │
+        ┌───────▼────┐ ┌────▼──────────┐
+        │ NLP / ML   │ │ SQLAlchemy DB │
+        │ TF-IDF /   │ │ User history  │
+        │ Classifier │ │ & analytics   │
+        └───────┬────┘ └────┬──────────┘
+                │            │
+        ┌───────▼────┐ ┌────▼──────────┐
+        │ VADER      │ │ Alembic       │
+        │ Fallback   │ │ Migrations    │
+        └────────────┘ └───────────────┘
 ```
 
-## Tech Stack
+## Technology Stack
 
 ### Frontend
 
-- Next.js 14
-- React
-- TypeScript
-- Tailwind CSS
-- Recharts
-- Lucide React
+- **Next.js 14** — React application framework
+- **React 18** — UI layer
+- **TypeScript** — static typing
+- **Tailwind CSS** — styling and responsive layout
+- **Recharts** — analytics visualizations
+- **Lucide React** — interface icons
 
 ### Backend
 
-- Python 3.12
-- FastAPI
-- Uvicorn
-- Pandas
-- Pydantic
-- SQLAlchemy
-- Alembic
-- SQLite-compatible database configuration
+- **Python 3.12**
+- **FastAPI** — REST API and SSE delivery
+- **Uvicorn** — ASGI server
+- **Pandas** — CSV/data processing
+- **Pydantic** — request/response validation
+- **SQLAlchemy** — ORM and database access
+- **Alembic** — database migrations
+- **PostgreSQL / SQLite** — production/local database options
 
 ### Machine Learning & NLP
 
-- Scikit-learn
-- TF-IDF feature extraction
-- Scikit-learn sentiment classifier
-- spaCy preprocessing
-- NLTK preprocessing
-- VADER fallback
+- **scikit-learn 1.8.0** — machine-learning pipeline
+- **TF-IDF** — text feature representation in the training/inference pipeline
+- **Pickle-serialized trained model/vectorizer** — persisted model artifacts
+- **NLTK** — NLP preprocessing support
+- **spaCy** — NLP preprocessing support
+- **VADER Sentiment** — rule-based fallback classifier when the custom model is unavailable
+- **TextBlob** — NLP dependency available to the backend
 
-### Authentication & Security
+The inference layer first attempts to use the persisted custom scikit-learn model and falls back to VADER when a custom model artifact is unavailable. fileciteturn923file0L2-L2
 
-- JWT bearer authentication
-- bcrypt password hashing
-- Configurable CORS
-- Pydantic request validation
-- Batch row and file-size limits
-- Authentication rate limiting
-- Production secret validation
-- Non-root backend container
+## AI Tools Used
 
-### DevOps
+AI-assisted development was used throughout the project workflow for architecture decisions, implementation support, debugging, security hardening, documentation, and code-review-style iteration.
 
-- Docker
-- Docker Compose
-- GitHub Actions CI
-- Dependabot dependency updates
-- Render deployment blueprint
-- Environment variables for runtime and build-time configuration
+### Primary AI development assistant
+
+- **ChatGPT (GPT-5.6 Luna)** — used to assist with project architecture, code implementation, debugging, testing strategy, security improvements, CI/CD troubleshooting, deployment-readiness work, and documentation.
+
+### Important distinction
+
+The application's **runtime sentiment intelligence is not powered by ChatGPT/OpenAI**. The production application uses the repository's machine-learning inference pipeline based on scikit-learn artifacts with a VADER fallback. fileciteturn923file0L2-L2
 
 ## Project Structure
 
 ```text
 twitter-sentiment-analysis/
 ├── backend/
-│   ├── ml/
-│   ├── tests/
 │   ├── dataset/
+│   │   ├── sentiment.csv
+│   │   └── sample_tweets.csv
+│   ├── data/
 │   ├── migrations/
 │   │   ├── versions/
 │   │   │   └── 20260905_0001_initial_schema.py
 │   │   ├── env.py
 │   │   └── README
-│   ├── data/
-│   │   └── .gitkeep
+│   ├── ml/
+│   │   ├── metrics.json
+│   │   ├── predict.py
+│   │   └── ...model/preprocessing files...
+│   ├── tests/
 │   ├── auth.py
 │   ├── database.py
 │   ├── main.py
 │   ├── models.py
 │   ├── rate_limit.py
 │   ├── requirements.txt
+│   ├── alembic.ini
+│   ├── Dockerfile
 │   └── .env.example
 ├── frontend/
 │   ├── src/
@@ -125,17 +144,42 @@ twitter-sentiment-analysis/
 │   │   ├── components/
 │   │   └── lib/
 │   ├── package.json
+│   ├── Dockerfile
 │   └── .env.example
 ├── .github/
 │   ├── workflows/
-│   │   └── ci.yml
+│   │   ├── ci.yml
+│   │   └── codeql.yml
 │   └── dependabot.yml
 ├── docker-compose.yml
 ├── render.yaml
+├── CONTRIBUTING.md
+├── SECURITY.md
 └── README.md
 ```
 
-## Run with Docker
+## Application Workflow
+
+```text
+User
+  │
+  ├── Analyze one text ───────────────► FastAPI ──► ML inference
+  │                                             │
+  ├── Upload CSV ─────────────────────► Batch pipeline
+  │                                             │
+  ├── Login/Register ─────────────────► JWT authentication
+  │                                             │
+  └── View history/dashboard ◄──────── Database ◄┘
+
+Dashboard
+  ├── Metrics endpoint
+  ├── Word-cloud endpoint
+  └── SSE stream endpoint
+```
+
+## Local Development
+
+### Option 1 — Docker Compose
 
 From the repository root:
 
@@ -143,23 +187,11 @@ From the repository root:
 docker compose up --build
 ```
 
-Frontend:
+Open:
 
-```text
-http://localhost:3000
-```
-
-Backend API:
-
-```text
-http://localhost:8000
-```
-
-Swagger documentation:
-
-```text
-http://localhost:8000/docs
-```
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
 
 Stop the stack:
 
@@ -167,45 +199,43 @@ Stop the stack:
 docker compose down
 ```
 
-The backend container applies Alembic migrations before starting FastAPI. Compose persists the SQLite-compatible backend data under the `sentiment_data` volume mounted at `/app/data`.
+The Compose setup persists local backend data in the `sentiment_data` volume. The backend container runs Alembic migrations before starting Uvicorn.
 
-The Compose configuration supports `ENVIRONMENT`, `FRONTEND_ORIGIN`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_BATCH_ROWS`, `MAX_BATCH_FILE_BYTES`, `AUTH_RATE_LIMIT`, `AUTH_RATE_WINDOW_SECONDS`, and the frontend `NEXT_PUBLIC_API_URL` build argument. The default batch file-size limit is `10485760` bytes (10 MiB).
+### Option 2 — Run without Docker
 
-## Run Locally Without Docker
-
-### Backend
+#### Backend
 
 ```bash
 cd backend
 python -m venv venv
 ```
 
-Activate the virtual environment, then install dependencies:
+Activate the environment and install dependencies:
 
 ```bash
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-Create the environment file from the example:
+Create your local environment file:
 
 ```bash
 copy .env.example .env
 ```
 
-Initialize the database schema with Alembic:
+Run migrations:
 
 ```bash
 alembic upgrade head
 ```
 
-Then start the API:
+Start FastAPI:
 
 ```bash
 uvicorn main:app --reload --port 8000
 ```
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -216,17 +246,44 @@ npm run dev
 
 The frontend runs on port `3000` by default.
 
-## Database Migrations
+## Environment Configuration
 
-Alembic is the schema migration mechanism used by the project.
+### Backend
 
-From `backend/`:
+The main runtime settings include:
+
+| Variable | Purpose | Default / Example |
+|---|---|---|
+| `ENVIRONMENT` | Runtime mode | `development` |
+| `DATABASE_URL` | Database connection | SQLite fallback locally; required in production |
+| `SECRET_KEY` | JWT signing secret | Development placeholder; use a unique secret in production |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT lifetime | `1440` |
+| `FRONTEND_ORIGIN` | Allowed browser origin | `http://localhost:3000` |
+| `MAX_BATCH_ROWS` | Maximum CSV rows | `1000` |
+| `MAX_BATCH_FILE_BYTES` | Maximum CSV upload size | `10485760` (10 MiB) |
+| `AUTH_RATE_LIMIT` | Authentication requests per window | `5` |
+| `AUTH_RATE_WINDOW_SECONDS` | Authentication rate-limit window | `60` |
+
+### Frontend
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Never commit real secrets or production credentials to the repository.
+
+## Database & Migrations
+
+The project uses SQLAlchemy models with Alembic migrations.
+
+Apply the current schema:
 
 ```bash
+cd backend
 alembic upgrade head
 ```
 
-For future schema changes:
+Create a future migration:
 
 ```bash
 alembic revision --autogenerate -m "describe schema change"
@@ -235,29 +292,30 @@ alembic upgrade head
 
 Review generated migrations before applying them to a production database.
 
-## API Endpoints
+## API Reference
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/` | API information and version |
-| GET | `/health` | Health check |
-| POST | `/auth/register` | Create an account and return a JWT |
-| POST | `/auth/login` | Authenticate an existing account |
-| GET | `/auth/me` | Return the authenticated user |
-| POST | `/analyze/text` | Analyze a single text without saving |
-| POST | `/analyses/text` | Analyze and save a result for the authenticated user |
-| GET | `/analyses/history` | Return the authenticated user's saved analyses |
-| GET | `/analyses/dashboard` | Return authenticated-user dashboard totals |
-| DELETE | `/analyses/{analysis_id}` | Delete one saved analysis owned by the authenticated user |
-| POST | `/analyze/batch` | Analyze a CSV dataset |
-| POST | `/analyze/analytics` | Return batch analytics and top terms |
-| GET | `/metrics` | Return model evaluation metrics |
-| GET | `/wordcloud` | Return trending keyword data |
-| GET | `/analyze/stream` | Stream simulated sentiment results through SSE |
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/` | API name, version, and status | No |
+| `GET` | `/health` | Database-backed health check | No |
+| `POST` | `/auth/register` | Register a user and return JWT | No |
+| `POST` | `/auth/login` | Authenticate a user and return JWT | No |
+| `GET` | `/auth/me` | Current authenticated user | Yes |
+| `POST` | `/analyze/text` | Analyze text without saving | No |
+| `POST` | `/analyses/text` | Analyze and persist a user's result | Yes |
+| `GET` | `/analyses/history` | Current user's saved analyses | Yes |
+| `GET` | `/analyses/dashboard` | Aggregated user statistics | Yes |
+| `DELETE` | `/analyses/{analysis_id}` | Delete an owned analysis | Yes |
+| `POST` | `/analyze/batch` | Analyze uploaded CSV data | No |
+| `GET` | `/metrics` | Model evaluation metrics | No |
+| `GET` | `/wordcloud` | Trending keyword data | No |
+| `GET` | `/stream` | SSE sentiment event stream | No |
+
+> **Note:** The current backend exposes `/stream` for SSE. The README intentionally avoids documenting the obsolete `/analyze/stream` path.
 
 ## CSV Batch Format
 
-The batch endpoint automatically looks for one of these columns, case-insensitively:
+The batch endpoint detects a text column case-insensitively using these names:
 
 ```text
 text
@@ -265,8 +323,6 @@ tweet
 content
 message
 ```
-
-If none of those columns exists, the backend falls back to the first string/object column. Empty rows are skipped, and the default maximum is `1000` rows and `10 MiB` per request. The limits are configurable with `MAX_BATCH_ROWS` and `MAX_BATCH_FILE_BYTES`.
 
 Example:
 
@@ -278,41 +334,34 @@ This product is terrible.
 The experience is okay, nothing special.
 ```
 
-## Model Evaluation
+Empty rows are skipped. The default limits are **1,000 rows** and **10 MiB**, configurable through `MAX_BATCH_ROWS` and `MAX_BATCH_FILE_BYTES`.
 
-The Overview dashboard displays the model metrics exposed by the backend, including:
+## Security
 
-- Accuracy
-- Precision
-- Recall
-- F1 score
-- Confusion matrix
+Security controls currently implemented include:
 
-For the current demonstration model, the repository exposes metrics generated from its included evaluation data. For production use, retrain and evaluate on a representative labeled dataset and report dataset provenance and per-class performance.
+- JWT bearer authentication for protected routes
+- bcrypt password hashing
+- Email and request validation through Pydantic
+- Strict CORS configuration
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- Restricted `Permissions-Policy`
+- Production HSTS header
+- Authentication endpoint rate limiting with `Retry-After`
+- `Cache-Control: no-store` on authentication responses
+- Production validation requiring a non-placeholder JWT secret
+- Production validation requiring `DATABASE_URL`
+- Non-root backend container execution
+- Batch upload size and row limits
+- User-isolated analysis history
 
-## Authentication Flow
+## Testing & Quality
 
-```text
-Register
-   ↓
-JWT access token
-   ↓
-Authenticated dashboard
-   ↓
-Analyze & save
-   ↓
-User-specific history
-   ↓
-Dashboard statistics / search / export / delete
-```
+GitHub Actions validates the application on pushes and pull requests.
 
-Passwords are hashed with bcrypt before storage, protected routes require a bearer JWT, and authentication endpoints are rate-limited through configurable environment variables.
-
-## CI / Quality Checks
-
-GitHub Actions validates both application layers on pushes and pull requests.
-
-### Backend
+### Backend checks
 
 ```bash
 python -m compileall -q .
@@ -321,7 +370,7 @@ alembic upgrade head
 pytest -q
 ```
 
-### Frontend
+### Frontend checks
 
 ```bash
 npm ci
@@ -329,27 +378,64 @@ npm run lint
 npm run build
 ```
 
-Dependabot is configured to check Python and npm dependency updates weekly.
+### Security analysis
+
+- GitHub CodeQL scans Python and JavaScript/TypeScript code.
+- Dependabot checks dependency updates weekly.
 
 ## Deployment
 
-The repository includes `render.yaml` for a two-service Render deployment: one Docker web service for the FastAPI backend and one Docker web service for the Next.js frontend.
+The repository includes a Render Blueprint with two web services:
+
+1. **Backend** — Dockerized FastAPI service with `/health` checks and startup migrations.
+2. **Frontend** — Dockerized Next.js service with build-time `NEXT_PUBLIC_API_URL` configuration.
 
 Before production deployment:
 
 1. Set `ENVIRONMENT=production`.
-2. Use a strong unique `SECRET_KEY`.
-3. Set the frontend `NEXT_PUBLIC_API_URL` to the public backend URL.
-4. Set backend `FRONTEND_ORIGIN` to the public frontend URL.
-5. Verify `/health`, authentication, analysis, batch processing, and SSE streaming after deployment.
-6. Confirm the database is backed by persistent production storage rather than ephemeral local storage.
+2. Provision a persistent PostgreSQL database.
+3. Set `DATABASE_URL` on the backend.
+4. Use a strong unique `SECRET_KEY`.
+5. Set `FRONTEND_ORIGIN` to the public frontend URL.
+6. Set `NEXT_PUBLIC_API_URL` to the public backend URL.
+7. Run/verify Alembic migrations.
+8. Validate `/health`, authentication, single analysis, batch analysis, history, and `/stream`.
 
-The Render blueprint is prepared in the repository, but deployment still requires completing the hosting-provider account setup.
+Production hosting is intentionally documented separately from local development so the repository remains reproducible and safe to configure.
 
-## Notes for Development
+## Model Evaluation
 
-The project is designed as a local portfolio/demo application. The included stream is a simulated SSE feed rather than a live X/Twitter API integration. The included model and metrics are also demonstration-oriented; production deployment should use a properly curated dataset, reproducible training, model versioning, persistent production storage, and a production secret-management strategy.
+The dashboard exposes:
+
+- Accuracy
+- Precision
+- Recall
+- F1 score
+- Confusion matrix
+
+The repository currently includes demonstration evaluation metrics. For a real production ML deployment, use a representative labeled dataset, document data provenance, track model versions, and report per-class performance.
+
+## AI-Assisted Development Disclosure
+
+This project was developed with AI-assisted engineering support. **ChatGPT (GPT-5.6 Luna)** was used as a development assistant for problem solving, implementation guidance, debugging, security hardening, documentation, and iterative repository maintenance.
+
+The AI assistant should not be confused with the application's runtime ML stack: runtime predictions are produced by the repository's scikit-learn model artifacts or the VADER fallback, not by ChatGPT. fileciteturn923file0L2-L2
+
+## Limitations & Future Improvements
+
+- The SSE stream is a dataset-backed demonstration rather than live X/Twitter ingestion.
+- The included model metrics are demonstration-oriented.
+- Production deployments should use persistent PostgreSQL storage.
+- A production-grade ML lifecycle should include reproducible training, validation datasets, experiment tracking, model versioning, and monitoring.
+- A future release could add real-time ingestion from a supported social-media data provider.
+
+## License
+
+No explicit open-source license is currently declared in this repository. Add a `LICENSE` file before distributing the project under a specific open-source license.
 
 ## Author
 
-Built and maintained as an NLP, machine-learning, and full-stack engineering portfolio project.
+**Pankaj Kumar**  
+Full-Stack Developer • Machine Learning • NLP • Cybersecurity
+
+Repository: [hack2ai/twitter-sentiment-analysis](https://github.com/hack2ai/twitter-sentiment-analysis)
